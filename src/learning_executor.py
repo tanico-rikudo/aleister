@@ -17,17 +17,27 @@ import plotly.graph_objects as go
 class LearningEvaluator:
     def __init__(self, name, logger):
         self.name = name
+        self.id = None
         self._logger = logger
         self.model = None
         self.device = "cpu"
         self.train_losses = []
         self.val_losses = []
         
-    def load_model_config(path):
+    def load_model_config(path=None,model=None):
         model_config_ini = configparser.ConfigParser()
         path = '../ini/model_config.ini' if path is None else path
-        model_config_ini.read(path, encoding='utf-8')
+        self.model_config = model_config_ini.read(path, encoding='utf-8')[model]
         self._logger.info('[DONE]Load Model Config.')
+        self.hparams = self.load_model_config(model)
+        self._logger.info('[DONE]Load Model Hyper params.')
+        
+    def load_general_config(path=None,mode=None):
+        config_ini = configparser.ConfigParser()
+        path = '../ini/config.ini' if path is None else path
+        self.general_config = config_ini.read(path, encoding='utf-8')[mode]
+        self.save_dir = self.general_config.get("MODEL_SAVE_PATH")
+        self._logger.info('[DONE]Load General Config.')
         
     def get_device(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -47,13 +57,19 @@ class LearningEvaluator:
         self.optimizer = optimizers.get(optimizer.lower())(**optim_params)
         self._logger.info('[DONE] Get optimizer. Optimiser={0}'.format(self.optimizer ))
         
-    def get_model_instance(self, model, model_params):
+    def get_model_instance(self, model_name, model_params):
         models = {
             "sdnn": SimpleDnn
         }
-        model =  models.get(model.lower())(**model_params)
+        model =  models.get(model_name.lower())(**model_params)
         self.model = model
         self._logger.info('[DONE]Load Model Instance.')
+        
+        
+    def load_model_hparameters(self, model):
+        self.load_model_config(model.upper())
+        self.hparams = { _k : self. self.model_config.getint}
+        
 
     def train_step(self, x, y):
         self.model.train()
@@ -64,7 +80,9 @@ class LearningEvaluator:
         return loss.item()
 
     def train(self, train_loader, val_loader, batch_size=64, n_epochs=50, n_features=1):
-        train_model_path = f'{self.name}_{dt.now().strftime("%Y-%m-%d %H:%M:%S")}'
+        self.id  = f'{self.name}_{dt.now().strftime("%Y%m%d")}_{dt.now().strftime("%H%M%S")}'
+        
+        self.logging.info("[Start] Training. ID={0}".format(self.id))
         for epoch in range(1, n_epochs + 1):
             batch_losses = []
             for x_batch, y_batch in train_loader:
@@ -94,8 +112,11 @@ class LearningEvaluator:
                 self._logger.info(
                     f"[{epoch}/{n_epochs}] Training loss: {training_loss:.4f}\t Validation loss: {validation_loss:.4f}"
                 )
-
-        torch.save(self.model.state_dict(), train_model_path)
+        self.logging.info("[DONE] Training. ID={0}".format(self.id))
+        save_path = os.path.join(self.save_dir, self.id )
+        torch.save(self.model.state_dict(), save_path)
+        self.logging.info("[DONE] Save Training. ID={0}".format(self.id))
+        
 
     def evaluate(self, test_loader, batch_size=1, n_features=1):
         with torch.no_grad():

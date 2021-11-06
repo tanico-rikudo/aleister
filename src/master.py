@@ -1,10 +1,11 @@
         
 def main():
+    #todo: define outside
     sd = 20200101
     ed = 20200131
     sym= 'BTC'
     ans_col = "movingBinary"
-    batch_size=64
+    model_type= "sdnn"
 
     import os,sys
     import logging
@@ -27,6 +28,7 @@ def main():
     from  gen_data import DataGen
     from  feature_preprocess import featurePreprocess
     from learning_executor import LearningEvaluator
+    from model_modules import parameterParser as pp
 
     # gen data 
     dg =  DataGen()
@@ -45,30 +47,35 @@ def main():
     train_loader, val_loader, test_loader, test_loader_one = fp.get_dataloader(X_train, y_train, X_val,y_val, X_test, y_test,batch_size)
 
     input_dim = X_train.shape[1]
-
-
+    
+    # train 
     le = LearningEvaluator(name="TEST_MODEL", logger = logger)
     le.get_device()
-
+    le.load_general_config()
+    
     model_params = {
         'input_dim': input_dim,
-        'hidden_dim' : 32,
-        'layer_dim' : 64,
-        'output_dim' : 1
-        
+        'hidden_dim' : le.hparams["hidden_dim"],
+        'layer_dim' : le.hparams["layer_dim"],
+        'output_dim' : le.hparams["out_dim"],
+        'l2_drop_rate':le.hparams["l2_drop_rate"]
     }
-    le.get_model_instance("sdnn",model_params)
+    le.get_model_instance(model_type,model_params)
 
     lossfn_params = {}
-    le.get_loss_fn("BCELogitLoss",{})
+    le.get_loss_fn(hparams["optimizer"],{})
 
     optim_params = {
         'params': le.model.parameters(),
-        'weight_decay': 1e-6,
-        'lr' : 1e-3}
-    le.get_optimizer("adam",optim_params)
+        'weight_decay': le.hparams["weight_decay"],
+        'lr':le.hparams["lr"]
+        }
+    
+    le.get_optimizer(hparams["loss_fn"],optim_params)
 
-    le.train(train_loader, val_loader, batch_size=batch_size, n_epochs=50, n_features=1)
+    le.train(train_loader, val_loader, 
+             batch_size=e.hparams["batch_size"], n_epochs=le.hparams["n_epoch"],
+             n_features=1)
     le.plot_losses()
     predictions, values = le.evaluate(
         test_loader_one,

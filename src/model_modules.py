@@ -1,7 +1,26 @@
 import torch.nn as nn
 import torch.nn.functional as F
+
+class parameterParser:
+    
+    @classmethod
+    def sdnn(model_config):
+        hparams = {}
+        hparams["n_epoch"] = model_config.getint("N_EPOCH")
+        hparams["batch_size"] = model_config.getint("BATCHSIZE")
+        hparams["hidden_dim"] = model_config.getint("HIDDEN_DIM")
+        hparams["layer_dim"] = model_config.getint("LAYER_DIM")
+        hparams["out_dim"] = model_config.getint("OUT_DIM")
+        hparams["l2_drop_rate"] = model_config.getfloat("L2_DROP_RATE")
+        hparams["weight_decay"] = model_config.getint("WEIGHT_DECAY")
+        hparams["lr"] = model_config.getint("LR")
+        hparams["optimizer"] = model_config.get("OPTIMIZER")
+        hparams["loss_fn"] = model_config.get("LOSSFN")
+        return hparams
+        
+    
 class SimpleDnn(nn.Module):
-    def __init__(self, input_dim, hidden_dim, layer_dim, output_dim):
+    def __init__(self, input_dim, hidden_dim, layer_dim, output_dim, l2_dropp_rate):
         super(SimpleDnn, self).__init__()
         
         self.layer_1 = nn.Linear(input_dim, hidden_dim)
@@ -10,7 +29,7 @@ class SimpleDnn(nn.Module):
         self.layer_out = nn.Linear(layer_dim//2, output_dim)
         
         self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=l2_drop_rate)
         self.batchnorm1 = nn.BatchNorm1d(hidden_dim)
         self.batchnorm2 = nn.BatchNorm1d(layer_dim)
         # self.batchnorm3 = nn.BatchNorm1d(64)
