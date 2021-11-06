@@ -2,10 +2,18 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, MaxAbsScaler, RobustScaler
 from sklearn.model_selection import train_test_split
+from util import utils
 
 class featurePreprocess:
     def __init__(self,logger):
         self._logger  = logger
+        
+    def load_general_config(path=None,mode=None):
+        config_ini = configparser.ConfigParser()
+        path = '../ini/config.ini' if path is None else path
+        self.general_config = config_ini.read(path, encoding='utf-8')[mode]
+        self.save_dir = self.general_config.get("MODEL_SAVE_PATH")
+        self._logger.info('[DONE]Load General Config.')
     
     def feature_label_split(self, df, target_col):
         y = df[[target_col]]
@@ -66,3 +74,26 @@ class featurePreprocess:
         X_train, X_val, X_test, y_train, y_val, y_test = self.train_val_test_split(Xy, ans_col, test_ratio, valid_ratio)
         X_train, X_val, X_test, y_train, y_val, y_test  = X_train.values, X_val.values, X_test.values, y_train.values, y_val.values, y_test.values
         return X_train, X_val, X_test, y_train, y_val, y_test
+    
+    def save_numpy_datas(**kwargs):
+        for key, obj in kwargs.items():
+            save_path = os.path.join(self.save_dir, "{0}".format(key) )
+            try:
+                utils.saveJbl(obj,path)
+                self._logger.info("[DONE] Save Prepro data. Key={0}, path={1}".format(key, save_path))
+            except Exception as e:
+                self._logger.warning("[Failure] Save Prepro data. Key={0}, path={1}".format(key, save_path))
+                
+    def load_numpy_datas(*args):
+        for key in args:
+            load_path = os.path.join(self.save_dir, "{0}".format(key) )
+            try:
+                obj = utils.loadJbl(load_path)
+                self._logger.info("[DONE] Load Prepro data. Key={0}, path={1}".format(key, load_path))
+                return obj
+            except Exception as e:
+                self._logger.warning("[Failure] Load Prepro data. Key={0}, path={1}".format(key, load_path))
+                
+            
+        
+        
