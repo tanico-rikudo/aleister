@@ -4,9 +4,10 @@ import logging.config
 import argparse
 os.environ['BASE_DIR'] =  '/Users/macico/Dropbox/btc'
 os.environ['KULOKO_DIR'] = os.path.join(os.environ['BASE_DIR'], "kuloko")
+os.environ['ALEISTER_DIR'] = os.path.join(os.environ['BASE_DIR'], "aleister")
 os.environ['COMMON_DIR'] = os.path.join(os.environ['BASE_DIR'], "geco_commons")
 os.environ['MONGO_DIR'] = os.path.join(os.environ['COMMON_DIR'] ,"mongodb")
-os.environ['LOGDIR'] = os.path.join(os.environ['KULOKO_DIR'], "log")
+os.environ['LOGDIR'] = os.path.join(os.environ['ALEISTER_DIR'], "log")
 sys.path.append(os.path.join(os.environ['KULOKO_DIR'],"items" ))
 
 sys.path.append(os.path.join(os.path.dirname('__file__'),'..'))
@@ -22,6 +23,13 @@ from  feature_preprocess import featurePreprocess
 from learning_executor import LearningEvaluator
 from model_modules import parameterParser as pp
 
+#todo: define outside
+sd = 20200101
+ed = 20200131
+sym= 'BTC'
+model_name="sdnn"
+config_mode="DEFAULT"
+
 def preprocessing(id):
     # gen data 
     dg =  DataGen()
@@ -30,7 +38,7 @@ def preprocessing(id):
     Xy = dg.get_Xy(trades)
 
     # prepro
-    fp.load_general_config()
+    ans_col = self.model_config.get("ANS_COL")
     X_train, X_val, X_test, y_train, y_val, y_test = fp.convert_dataset(Xy, ans_col, test_ratio=0.4, valid_ratio=0.5)
     scaler  = fp.get_scaler("minmax")
     X_train,x_scaler = fp.scalingX(X_train)
@@ -74,15 +82,7 @@ def train(id):
             batch_size=1,
             n_features=input_dim
         )
-    
-def main():
-    #todo: define outside
-    sd = 20200101
-    ed = 20200131
-    sym= 'BTC'
-    ans_col = "movingBinary"
-    model_type= "sdnn"
-    
+        
 def make_parser():
     parser = argparse.ArgumentParser(
         prog="Aleister interface",
@@ -144,16 +144,17 @@ def make_parser():
 if __name__ == "__main__":
     parser = make_parser()
     arg_dict = vars(parser.parse_args(args))
-    
+    _id = dt.now("%Y%m%d%H%M")
+
     # load all parent modules
     fp = featurePreprocess(_id, logger)
-    fp.load_general_config(path=None,mode="DEFAULT")
-    fp.load_model_config(path=None,model_name="sdnn")
+    fp.load_general_config(path=None,mode=config_mode)
+    fp.load_model_config(path=None,model_name=model_name)
     
     le = LearningEvaluator(_id, logger)
     le.get_device()
-    le.load_general_config(path=None,mode="DEFAULT")
-    le.load_model_config(path=None, model_name="sdnn")
+    le.load_general_config(path=None,mode=config_mode)
+    le.load_model_config(path=None, model_name=model_name)
     
     if arg_dict["execute_mode"] == "train":
         train(arg_dict["id"])
