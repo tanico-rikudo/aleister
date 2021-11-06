@@ -3,18 +3,12 @@ from torch.utils.data import TensorDataset, DataLoader
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, MaxAbsScaler, RobustScaler
 from sklearn.model_selection import train_test_split
 from util import utils
+from base_process import BaseProcess
 
-class featurePreprocess:
-    def __init__(self,logger):
-        self._logger  = logger
-        
-    def load_general_config(path=None,mode=None):
-        config_ini = configparser.ConfigParser()
-        path = '../ini/config.ini' if path is None else path
-        self.general_config = config_ini.read(path, encoding='utf-8')[mode]
-        self.save_dir = self.general_config.get("MODEL_SAVE_PATH")
-        self._logger.info('[DONE]Load General Config.')
-    
+class featurePreprocess(BaseProcess):
+    def __init__(self,_id,  logger):
+        super().__init__(_id, logger)
+            
     def feature_label_split(self, df, target_col):
         y = df[[target_col]]
         X = df.drop(columns=[target_col])

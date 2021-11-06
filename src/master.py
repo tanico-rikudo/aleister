@@ -22,7 +22,7 @@ from  feature_preprocess import featurePreprocess
 from learning_executor import LearningEvaluator
 from model_modules import parameterParser as pp
 
-def preprocessing():
+def preprocessing(id):
     # gen data 
     dg =  DataGen()
     dg.get_load_data_proxy()
@@ -30,7 +30,6 @@ def preprocessing():
     Xy = dg.get_Xy(trades)
 
     # prepro
-    fp = featurePreprocess(logger)
     fp.load_general_config()
     X_train, X_val, X_test, y_train, y_val, y_test = fp.convert_dataset(Xy, ans_col, test_ratio=0.4, valid_ratio=0.5)
     scaler  = fp.get_scaler("minmax")
@@ -40,17 +39,11 @@ def preprocessing():
 
     train_loader, val_loader, test_loader, test_loader_one = fp.get_dataloader(X_train, y_train, X_val,y_val, X_test, y_test,batch_size)
     
-def train():
-    fp = featurePreprocess(logger)
-    fp.load_general_config()
+def train(id):
     X_train, X_val, X_test, y_train, y_val, y_test = fp.load_numpy_datas(*["X_train", "X_val", "X_test", "y_train", "y_val", "y_test" ])
 
     # train 
     input_dim = X_train.shape[1]
-    le = LearningEvaluator(name="TEST_MODEL", logger = logger)
-    le.get_device()
-    le.load_general_config()
-    
     model_params = {
         'input_dim': input_dim,
         'hidden_dim' : le.hparams["hidden_dim"],
@@ -151,10 +144,21 @@ def make_parser():
 if __name__ == "__main__":
     parser = make_parser()
     arg_dict = vars(parser.parse_args(args))
+    
+    # load all parent modules
+    fp = featurePreprocess(_id, logger)
+    fp.load_general_config(path=None,mode="DEFAULT")
+    fp.load_model_config(path=None,model_name="sdnn")
+    
+    le = LearningEvaluator(_id, logger)
+    le.get_device()
+    le.load_general_config(path=None,mode="DEFAULT")
+    le.load_model_config(path=None, model_name="sdnn")
+    
     if arg_dict["execute_mode"] == "train":
-        train()
+        train(arg_dict["id"])
     elif arg_dict["execute_mode"] == "test":
-        preprocessing()
+        preprocessing(arg_dict["id"])
     else:
         pass
         

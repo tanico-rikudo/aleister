@@ -13,32 +13,19 @@ import numpy as np
 from plotly.offline import plot
 import plotly.graph_objects as go
 
+from base_process import BaseProcess
+
 
 class LearningEvaluator:
-    def __init__(self, name, logger):
-        self.name = name
-        self.id = None
+    def __init__(self, _id, logger):
+        super().__init__(_id, logger)
+        self.id = _id
         self._logger = logger
         self.model = None
         self.device = "cpu"
         self.train_losses = []
         self.val_losses = []
-        
-    def load_model_config(path=None,model=None):
-        model_config_ini = configparser.ConfigParser()
-        path = '../ini/model_config.ini' if path is None else path
-        self.model_config = model_config_ini.read(path, encoding='utf-8')[model]
-        self._logger.info('[DONE]Load Model Config.')
-        self.hparams = self.load_model_config(model)
-        self._logger.info('[DONE]Load Model Hyper params.')
-        
-    def load_general_config(path=None,mode=None):
-        config_ini = configparser.ConfigParser()
-        path = '../ini/config.ini' if path is None else path
-        self.general_config = config_ini.read(path, encoding='utf-8')[mode]
-        self.save_dir = self.general_config.get("MODEL_SAVE_PATH")
-        self._logger.info('[DONE]Load General Config.')
-        
+                
     def get_device(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self._logger.info('[DONE] Get device. Device={0}'.format(self.device ))
@@ -65,10 +52,12 @@ class LearningEvaluator:
         self.model = model
         self._logger.info('[DONE]Load Model Instance.')
         
-        
     def load_model_hparameters(self, model):
-        self.load_model_config(model.upper())
-        self.hparams = { _k : self. self.model_config.getint}
+        hparams = {
+            "sdnn": parameterParser.sdnn
+        }
+        self.hparams =  hparams.get(model_name.lower())(self.mode_config)
+        self._logger.info('[DONE]Load hyper params.')
         
 
     def train_step(self, x, y):
@@ -79,9 +68,7 @@ class LearningEvaluator:
         self.optimizer.step()
         return loss.item()
 
-    def train(self, train_loader, val_loader, batch_size=64, n_epochs=50, n_features=1):
-        self.id  = f'{self.name}_{dt.now().strftime("%Y%m%d")}_{dt.now().strftime("%H%M%S")}'
-        
+    def train(self, train_loader, val_loader, batch_size=64, n_epochs=50, n_features=1):        
         self.logging.info("[Start] Training. ID={0}".format(self.id))
         for epoch in range(1, n_epochs + 1):
             batch_losses = []
@@ -113,7 +100,7 @@ class LearningEvaluator:
                     f"[{epoch}/{n_epochs}] Training loss: {training_loss:.4f}\t Validation loss: {validation_loss:.4f}"
                 )
         self.logging.info("[DONE] Training. ID={0}".format(self.id))
-        save_path = os.path.join(self.save_dir, self.id )
+        save_path = os.path.join(self.save_dir, "torch.model" )
         torch.save(self.model.state_dict(), save_path)
         self.logging.info("[DONE] Save Training. ID={0}".format(self.id))
         
