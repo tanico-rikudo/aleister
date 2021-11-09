@@ -4,20 +4,23 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
 from torch.autograd import Variable
-from model_modules import *
+
+from torch.utils.tensorboard import SummaryWriter
+
+from sklearn.metrics import accuracy_score
 
 from mlflow_writer import MlflowWriter
 
 from datetime import datetime as dt
-
 import numpy as np
 
 from plotly.offline import plot
 import plotly.graph_objects as go
 
 from base_process import BaseProcess
+from model_modules import *
 
-from sklearn.metrics import accuracy_score
+
 
 class LearningEvaluator:
     def __init__(self, _id, logger):
@@ -98,6 +101,7 @@ class LearningEvaluator:
                 batch_losses.append(loss)
             training_loss = np.mean(batch_losses)
             self.train_losses.append(training_loss)
+            self.mlwriter.log_metric('train_loss', loss.data.item(), epoch)
 
             with torch.no_grad():
                 batch_val_losses = []
@@ -111,6 +115,7 @@ class LearningEvaluator:
                     batch_val_losses.append(val_loss)
                 validation_loss = np.mean(batch_val_losses)
                 self.val_losses.append(validation_loss)
+                self.mlwriter.log_metric('valid_loss', val_loss.data.item(), epoch)
 
             if (epoch <= 10) | (epoch % 50 == 0):
                 self._logger.info(
