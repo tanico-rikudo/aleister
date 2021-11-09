@@ -30,7 +30,7 @@ sym= 'BTC'
 model_name="sdnn"
 config_mode="DEFAULT"
 
-def preprocessing(id):
+def preprocessing(fp):
     # gen data 
     dg =  DataGen()
     dg.get_load_data_proxy()
@@ -38,7 +38,7 @@ def preprocessing(id):
     Xy = dg.get_Xy(trades)
 
     # prepro
-    ans_col = self.model_config.get("ANS_COL")
+    ans_col = fp.model_config.get("ANS_COL")
     X_train, X_val, X_test, y_train, y_val, y_test = fp.convert_dataset(Xy, ans_col, test_ratio=0.4, valid_ratio=0.5)
     scaler  = fp.get_scaler("minmax")
     X_train,x_scaler = fp.scalingX(X_train)
@@ -47,7 +47,7 @@ def preprocessing(id):
 
     train_loader, val_loader, test_loader, test_loader_one = fp.get_dataloader(X_train, y_train, X_val,y_val, X_test, y_test,batch_size)
     
-def train(id):
+def train(le):
     X_train, X_val, X_test, y_train, y_val, y_test = fp.load_numpy_datas(*["X_train", "X_val", "X_test", "y_train", "y_val", "y_test" ])
 
     # train 
@@ -143,7 +143,7 @@ def make_parser():
 def main(args):
     parser = make_parser()
     arg_dict = vars(parser.parse_args(args))
-    _id = dt.now("%Y%m%d%H%M")
+    _id = arg_dict["id"]# dt.now("%Y%m%d%H%M")
 
     # load all parent modules
     fp = featurePreprocess(_id, logger)
@@ -156,13 +156,12 @@ def main(args):
     le.load_model_config(source="ini", path=None, model_name=model_name)
     
     if arg_dict["execute_mode"] == "train":
-        train(arg_dict["id"])
+        train(le)
     elif arg_dict["execute_mode"] == "test":
-        preprocessing(arg_dict["id"])
+        preprocessing(fp)
     else:
         pass
 
-    
 if __name__ == "__main__":
     main(args)
 
