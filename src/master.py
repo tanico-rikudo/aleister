@@ -139,22 +139,21 @@ def make_parser():
         '-test_ed','--test_end_date',
         type=int, 
         help='train end date ')
-
     
-if __name__ == "__main__":
+def main(args):
     parser = make_parser()
     arg_dict = vars(parser.parse_args(args))
     _id = dt.now("%Y%m%d%H%M")
 
     # load all parent modules
     fp = featurePreprocess(_id, logger)
-    fp.load_general_config(path=None,mode=config_mode)
-    fp.load_model_config(path=None,model_name=model_name)
+    fp.load_general_config(source="ini", path=None,mode=config_mode)
+    fp.load_model_config(source="ini", path=None,model_name=model_name)
     
     le = LearningEvaluator(_id, logger)
     le.get_device()
-    le.load_general_config(path=None,mode=config_mode)
-    le.load_model_config(path=None, model_name=model_name)
+    le.load_general_config(source="ini", path=None,mode=config_mode)
+    le.load_model_config(source="ini", path=None, model_name=model_name)
     
     if arg_dict["execute_mode"] == "train":
         train(arg_dict["id"])
@@ -162,6 +161,11 @@ if __name__ == "__main__":
         preprocessing(arg_dict["id"])
     else:
         pass
+
+    
+if __name__ == "__main__":
+    main(args)
+
         
 
 
