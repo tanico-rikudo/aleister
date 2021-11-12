@@ -121,13 +121,10 @@ class LearningEvaluator:
                 self._logger.info(
                     f"[{epoch}/{n_epochs}] Training loss: {training_loss:.4f}\t Validation loss: {validation_loss:.4f}"
                 )
-        self.logging.info("[DONE] Training. ID={0}".format(self.id))
-        save_path = os.path.join(self.save_dir, "torch.model" )
-        torch.save(self.model.state_dict(), save_path)
-        self.logging.info("[DONE] Save Training. ID={0}".format(self.id))
+        self.save_model()
+        self.logging.info("[DONE] Training. ID={0}".format(self.id))        
         self.mlwriter.set_terminated()
-        
-
+    
     def evaluate(self, test_loader, batch_size=1, n_features=1):
         with torch.no_grad():
             predictions = []
@@ -141,7 +138,7 @@ class LearningEvaluator:
                 predictions.append(yhat.to(self.device).detach().numpy())
                 truths.append(y_test.to(self.device).detach().numpy())
                 
-        # record acc
+        # record acc 
         acc = accuracy_score(truths, predictions)
         self.mlwriter.log_metric('accuracy', accuracy) 
         return predictions, truths
@@ -153,6 +150,22 @@ class LearningEvaluator:
             yhat = self.model(x_test)
             pred = yhat.to(self.device).detach().numpy()
         return pred
+    
+    def get_model_save_path(self, _dir=None, _id=None):
+        _id = self.id if _id is None else _id
+        _dir = self.save_dir if _dir is None else _dir
+        self.save_path = os.path.join(_dir, "torch_{0}_model.path".format(_id) )
+        
+    def save_model(self,save_path):
+        save_path = self.save_path if save_path is None else save_path
+        torch.save(self.model.to(self.device).state_dict(), save_path)
+        self.logging.info("[DONE] Save Model. Path={0}".format(save_path))
+        
+    def load_model(self, load_path):
+        load_path = self.save_path if save_path is None else load_path
+        torch.save(self.model.to(self.device).state_dict(), save_path)
+        self.logging.info("[DONE] Load Model. Path={0}".format(save_path))
+
         
     def plot_losses(self):
         """
