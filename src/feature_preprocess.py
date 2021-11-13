@@ -41,18 +41,20 @@ class featurePreprocess(BaseProcess):
             X_scaled = scaler.transform(X)
         return X_scaled,scaler
     
-    def get_dataloader(self, X_train, y_train, X_val,y_val, X_test=None, y_test=None, batch_size=64):
-        
-        train_features = torch.Tensor(X_train)
-        train_targets = torch.Tensor(y_train)
-        train = TensorDataset(train_features, train_targets)
-        train_loader = DataLoader(train, batch_size=batch_size, shuffle=False, drop_last=True)
-        
-        
-        val_features = torch.Tensor(X_val)
-        val_targets = torch.Tensor(y_val)
-        val = TensorDataset(val_features, val_targets)
-        val_loader = DataLoader(val, batch_size=batch_size, shuffle=False, drop_last=True)
+    def get_dataloader(self, X_train= None, y_train= None, X_val= None,y_val= None, X_test=None, y_test=None, batch_size=64):
+        train_loader = None
+        if X_train is not None:
+            train_features = torch.Tensor(X_train)
+            train_targets = torch.Tensor(y_train)
+            train = TensorDataset(train_features, train_targets)
+            train_loader = DataLoader(train, batch_size=batch_size, shuffle=False, drop_last=True)
+            
+        test_loader = None          
+        if X_val is not None:
+            val_features = torch.Tensor(X_val)
+            val_targets = torch.Tensor(y_val)
+            val = TensorDataset(val_features, val_targets)
+            val_loader = DataLoader(val, batch_size=batch_size, shuffle=False, drop_last=True)
         
         test_loader, test_loader_one = None, None
         if X_test is not None:
@@ -79,14 +81,16 @@ class featurePreprocess(BaseProcess):
                 self._logger.warning("[Failure] Save Prepro data. Key={0}, path={1}".format(key, save_path))
                 
     def load_numpy_datas(*args):
+        objs = {}
         for key in args:
             load_path = os.path.join(self.save_dir, "{0}".format(key) )
             try:
                 obj = utils.loadJbl(load_path)
                 self._logger.info("[DONE] Load Prepro data. Key={0}, path={1}".format(key, load_path))
-                return obj
+                objs[key] = obj
             except Exception as e:
                 self._logger.warning("[Failure] Load Prepro data. Key={0}, path={1}".format(key, load_path))
+        return (objs[key] for key in args)
                 
             
         

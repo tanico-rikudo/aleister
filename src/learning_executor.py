@@ -79,6 +79,7 @@ class LearningEvaluator:
 
     def train(self, train_loader, val_loader, batch_size=64, n_epochs=50, n_features=1):        
         self.logging.info("[Start] Training. ID={0}".format(self.id))
+        _ = self.get_model_save_path()  #todo : designate path
         
         # mlflow
         dict_config = {
@@ -140,8 +141,12 @@ class LearningEvaluator:
                 
         # record acc 
         acc = accuracy_score(truths, predictions)
+        scores={
+            "accuracy":acc
+        }
         self.mlwriter.log_metric('accuracy', accuracy) 
-        return predictions, truths
+        
+        return predictions, truths, scores
     
     def prediction(x):
         with torch.no_grad():
@@ -155,6 +160,7 @@ class LearningEvaluator:
         _id = self.id if _id is None else _id
         _dir = self.save_dir if _dir is None else _dir
         self.save_path = os.path.join(_dir, "torch_{0}_model.path".format(_id) )
+        return self.save_path
         
     def save_model(self,save_path):
         save_path = self.save_path if save_path is None else save_path
