@@ -30,6 +30,8 @@ sym= 'BTC'
 model_name="sdnn"
 config_mode="DEFAULT"
 
+
+
 def preprocessing(fp):
     # gen data 
     dg =  DataGen()
@@ -44,13 +46,20 @@ def preprocessing(fp):
     X_train,x_scaler = fp.scalingX(X_train)
     X_val,_ = fp.scalingX(X_val,x_scaler)
     X_test,_ = fp.scalingX(X_test,x_scaler)
-
+    fp.save_numpy_datas(**{
+        "X_train": X_train, "X_val":X_val, "X_test": X_test,
+        "y_train":y_train, "y_val":y_val, "y_test":y_test,
+        "x_scaler":x_scaler
+    })
     train_loader, val_loader, test_loader, test_loader_one = fp.get_dataloader(X_train, y_train, X_val,y_val, X_test, y_test,batch_size)
+    return train_loader, val_loader, test_loader, test_loader_one
     
-def train(le):
-    X_train, X_val, X_test, y_train, y_val, y_test = fp.load_numpy_datas(*["X_train", "X_val", "X_test", "y_train", "y_val", "y_test" ])
+def train(fp,le):
+    obj_keys = ["X_train", "X_val", "y_train", "y_val"]
+    X_train, X_val,  y_train, y_val= fp.load_numpy_datas(obj_keys)
+    train_loader, val_loader = fp.get_dataloader(X_train, y_train, X_val,y_val, None, None, batch_size)
 
-    # train 
+    # train set up
     input_dim = X_train.shape[1]
     model_params = {
         'input_dim': input_dim,
@@ -72,16 +81,18 @@ def train(le):
     
     le.get_optimizer(hparams["loss_fn"],optim_params)
 
+    # train
     le.train(train_loader, val_loader, 
              batch_size=e.hparams["batch_size"], n_epochs=le.hparams["n_epoch"],
              n_features=1)
     le.plot_losses()
-    if len(y_test) > 0:
-        predictions, values = le.evaluate(
-            test_loader_one,
-            batch_size=1,
-            n_features=input_dim
-        )
+    
+def valid(fp,le):
+    X_test, y_test = fp.load_numpy_datas(["X_test", "y_test" ])
+    test_loader, test_loader_one = fp.get_dataloader( X_test, y_test,batch_size)
+    _ = le.get_model_save_path()
+    le.load_model()
+    predictions, values, scores = le.evaluate(test_loader_one,batch_size=1, n_features=input_dim)
         
 def make_parser():
     parser = argparse.ArgumentParser(
@@ -94,7 +105,7 @@ def make_parser():
         '-mode','--execute_mode',
         type=str, 
         required=True,
-        choices=['train', 'prepro'],
+        choices=['train', 'prepro', 'valid'],
         help='Execution mode. ')
     
     parser.add_argument(
@@ -155,10 +166,13 @@ def main(args):
     le.load_general_config(source="ini", path=None,mode=config_mode)
     le.load_model_config(source="ini", path=None, model_name=model_name)
     
-    if arg_dict["execute_mode"] == "train":
-        train(le)
-    elif arg_dict["execute_mode"] == "test":
+
+    if arg_dict["execute_mode"] == "prepro":
         preprocessing(fp)
+    elif arg_dict["execute_mode"] == "train":
+        train(fp, le)
+    elif arg_dict["execute_mode"] == "valid":
+        valid(fp, le)
     else:
         pass
 
