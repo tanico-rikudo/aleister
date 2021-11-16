@@ -1,26 +1,54 @@
+import  os, sys
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, MaxAbsScaler, RobustScaler
 from sklearn.model_selection import train_test_split
 from util import utils
+from util.exceptions import *
+from util import daylib
 from base_process import BaseProcess
 
+dl = daylib.daylib()
+
 class featurePreprocess(BaseProcess):
-    def __init__(self,_id,  logger):
-        super().__init__(_id, logger)
+    def __init__(self,_id):
+        super().__init__(_id)
             
     def feature_label_split(self, df, target_col):
-        y = df[[target_col]]
+        y = df.loc[:,[target_col]]
         X = df.drop(columns=[target_col])
         return X, y
 
-    def train_val_test_split(self, df, target_col, test_ratio,val_ratio):
-        val_ratio = test_ratio / (1 - test_ratio)
-        X, y = self.feature_label_split(df, target_col)
+    def train_val_test_ratio_split(self, X, y, test_ratio,val_ratio):
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_ratio, shuffle=False)
         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=val_ratio, shuffle=False)
         self._logger.info("[DONE] Split data. Train:{0}({1}), Val:{2}({3}), Test:{4}({5})"
-                          .format(len(X_train),(1-val_ratio),len(X_train),val_ratio, len(X_train),test_ratio))
+                          .format(len(X_train),(1-val_ratio)*(1-test_ratio),
+                                  len(X_val),val_ratio*(1-test_ratio), 
+                                  len(X_test),test_ratio))
+        return X_train, X_val, X_test, y_train, y_val, y_test
+
+    def train_val_test_period_split(self, X, y, train_start=None, train_end=None, valid_start=None, valid_end=None, test_start=None, test_end=None):
+        try:
+            train_start, train_end = dl.intD_to_strYMD(train_start), dl.intD_to_strYMD(train_end)
+            X_train, y_train = X.loc[train_start:train_end], y.loc[train_start:train_end]
+            self._logger.info("[DONE] Split data. Train:{0}({1}~{2})".format(len(X_train), train_start, train_end))
+        except Exception as e:
+            self._logger.warning("[Failure] Split data. Train:{0}~{1}})".format(train_start, train_end))
+        try:
+            valid_start, valid_end = dl.intD_to_strYMD(valid_start), dl.intD_to_strYMD(valid_end)
+            X_val, y_val = X.loc[valid_start:valid_end], y.loc[valid_start:valid_end]
+            self._logger.info("[DONE] Split data. Valid:{0}({1}~{2})".format(len(X_val), valid_start, valid_end))
+        except Exception as e:
+            self._logger.warning("[Failure] Split data. Valid:{0}~{1}".format(valid_start, valid_end))
+
+        try:
+            test_start, test_end = dl.intD_to_strYMD(test_start), dl.intD_to_strYMD(test_end)
+            X_test, y_test = X.loc[test_start:test_end], y.loc[test_start:test_end]
+            self._logger.info("[DONE] Split data. Test:{0}({1}~{2})".format(len(X_test), test_start, test_end))
+        except Exception as e:
+            self._logger.warning("[Failure] Split data. Test:{0}~{1}".format( test_start, test_end))
+        
         return X_train, X_val, X_test, y_train, y_val, y_test
     
     def get_scaler(self, scaler):
@@ -49,7 +77,7 @@ class featurePreprocess(BaseProcess):
             train = TensorDataset(train_features, train_targets)
             train_loader = DataLoader(train, batch_size=batch_size, shuffle=False, drop_last=True)
             
-        test_loader = None          
+        val_loader = None          
         if X_val is not None:
             val_features = torch.Tensor(X_val)
             val_targets = torch.Tensor(y_val)
@@ -63,24 +91,32 @@ class featurePreprocess(BaseProcess):
             test = TensorDataset(test_features, test_targets)
             test_loader = DataLoader(test, batch_size=batch_size, shuffle=False, drop_last=True)
             test_loader_one = DataLoader(test, batch_size=1, shuffle=False, drop_last=True)
-        self._logger.info("[DONE] Data Loader")
+        self._logger.info("[DONE] Create Data Loader")
         return train_loader, val_loader, test_loader, test_loader_one
 
-    def convert_dataset(self, Xy, ans_col, test_ratio=0.4, valid_ratio=0.5):
-        X_train, X_val, X_test, y_train, y_val, y_test = self.train_val_test_split(Xy, ans_col, test_ratio, valid_ratio)
+    def convert_dataset(self, Xy, ans_col, split_rule, test_ratio=0.4, valid_ratio=0.5, 
+                        train_start=None, train_end=None, valid_start=None, valid_end=None, test_start=None, test_end=None):
+        X, y = self.feature_label_split(df=Xy, target_col=ans_col)
+        if split_rule == 'ratio':
+            X_train, X_val, X_test, y_train, y_val, y_test = self.train_val_test_ratio_split(X, y, test_ratio, valid_ratio)
+        elif split_rule == 'period':
+            X_train, X_val, X_test, y_train, y_val, y_test = \
+                self.train_val_test_period_split(X, y, train_start, train_end, valid_start, valid_end, test_start, test_end)
+        else:
+            logging.warning("[Failure] No split rule.")
         X_train, X_val, X_test, y_train, y_val, y_test  = X_train.values, X_val.values, X_test.values, y_train.values, y_val.values, y_test.values
         return X_train, X_val, X_test, y_train, y_val, y_test
     
-    def save_numpy_datas(**kwargs):
+    def save_numpy_datas(self,**kwargs):
         for key, obj in kwargs.items():
             save_path = os.path.join(self.save_dir, "{0}".format(key) )
             try:
-                utils.saveJbl(obj,path)
+                utils.saveJbl(obj,save_path)
                 self._logger.info("[DONE] Save Prepro data. Key={0}, path={1}".format(key, save_path))
             except Exception as e:
-                self._logger.warning("[Failure] Save Prepro data. Key={0}, path={1}".format(key, save_path))
+                self._logger.warning("[Failure] Save Prepro data. Key={0}, path={1}".format(key, save_path),exc_info=True)
                 
-    def load_numpy_datas(*args):
+    def load_numpy_datas(self,args):
         objs = {}
         for key in args:
             load_path = os.path.join(self.save_dir, "{0}".format(key) )

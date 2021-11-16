@@ -1,3 +1,4 @@
+import  os, sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -22,11 +23,10 @@ from model_modules import *
 
 
 
-class LearningEvaluator:
-    def __init__(self, _id, logger):
-        super().__init__(_id, logger)
+class LearningEvaluator(BaseProcess):
+    def __init__(self, _id):
+        super().__init__(_id)
         self.id = _id
-        self._logger = logger
         self.model = None
         self.device = "cpu"
         self.train_losses = []
@@ -61,11 +61,12 @@ class LearningEvaluator:
         self.model_name = model_name
         self._logger.info('[DONE]Load Model Instance.')
         
-    def load_model_hparameters(self, model):
+    def load_model_hparameters(self, model_name):
         hparams = {
             "sdnn": parameterParser.sdnn
         }
-        self.hparams =  hparams.get(model_name.lower())(self.mode_config)
+        self.model_name = model_name
+        self.hparams =  hparams.get(model_name.lower())(self.model_config)
         self._logger.info('[DONE]Load hyper params.')
         
 
@@ -78,7 +79,7 @@ class LearningEvaluator:
         return loss.item()
 
     def train(self, train_loader, val_loader, batch_size=64, n_epochs=50, n_features=1):        
-        self.logging.info("[Start] Training. ID={0}".format(self.id))
+        self._logger.info("[Start] Training. ID={0}".format(self.id))
         _ = self.get_model_save_path()  #todo : designate path
         
         # mlflow
@@ -102,7 +103,7 @@ class LearningEvaluator:
                 batch_losses.append(loss)
             training_loss = np.mean(batch_losses)
             self.train_losses.append(training_loss)
-            self.mlwriter.log_metric('train_loss', loss.data.item(), epoch)
+            self.mlwriter.log_metric('train_loss',  training_loss, epoch)
 
             with torch.no_grad():
                 batch_val_losses = []
@@ -116,35 +117,38 @@ class LearningEvaluator:
                     batch_val_losses.append(val_loss)
                 validation_loss = np.mean(batch_val_losses)
                 self.val_losses.append(validation_loss)
-                self.mlwriter.log_metric('valid_loss', val_loss.data.item(), epoch)
+                self.mlwriter.log_metric('valid_loss', validation_loss, epoch)
 
             if (epoch <= 10) | (epoch % 50 == 0):
                 self._logger.info(
                     f"[{epoch}/{n_epochs}] Training loss: {training_loss:.4f}\t Validation loss: {validation_loss:.4f}"
                 )
         self.save_model()
-        self.logging.info("[DONE] Training. ID={0}".format(self.id))        
+        self._logger.info("[DONE] Training. ID={0}".format(self.id))        
         self.mlwriter.set_terminated()
     
     def evaluate(self, test_loader, batch_size=1, n_features=1):
         with torch.no_grad():
-            predictions = []
-            truths = []
+            predictions = np.array([])
+            truths  = np.array([])
             for x_test, y_test in test_loader:
                 # x_test = x_test.view([batch_size, -1, n_features]).to(device)
                 x_test = x_test.to(self.device)
                 y_test = y_test.to(self.device)
                 self.model.eval()
                 yhat = self.model(x_test)
-                predictions.append(yhat.to(self.device).detach().numpy())
-                truths.append(y_test.to(self.device).detach().numpy())
+                predictions = np.append(predictions, yhat.to(self.device).detach().numpy())
+                truths = np.append(truths, y_test.to(self.device).detach().numpy())
                 
         # record acc 
+        self.prediction = predictions
+        self.truths = truths
+
         acc = accuracy_score(truths, predictions)
         scores={
             "accuracy":acc
         }
-        self.mlwriter.log_metric('accuracy', accuracy) 
+        self.mlwriter.log_metric('accuracy',  acc) 
         
         return predictions, truths, scores
     
@@ -162,17 +166,16 @@ class LearningEvaluator:
         self.save_path = os.path.join(_dir, "torch_{0}_model.path".format(_id) )
         return self.save_path
         
-    def save_model(self,save_path):
+    def save_model(self,save_path=None):
         save_path = self.save_path if save_path is None else save_path
         torch.save(self.model.to(self.device).state_dict(), save_path)
-        self.logging.info("[DONE] Save Model. Path={0}".format(save_path))
+        self._logger.info("[DONE] Save Model. Path={0}".format(save_path))
         
-    def load_model(self, load_path):
-        load_path = self.save_path if save_path is None else load_path
-        torch.save(self.model.to(self.device).state_dict(), save_path)
-        self.logging.info("[DONE] Load Model. Path={0}".format(save_path))
+    def load_model_weight(self, load_path=None):
+        load_path = self.save_path if load_path is None else load_path
+        self.model.load_state_dict(torch.load(load_path))#.to(self.device)
+        self._logger.info("[DONE] Load Model. Path={0}".format(load_path))
 
-        
     def plot_losses(self):
         """
         The method plots the calculated loss values for training and validation

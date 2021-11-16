@@ -3,7 +3,7 @@ import torch.nn.functional as F
 
 class parameterParser:
     
-    @classmethod
+    @staticmethod
     def sdnn(model_config):
         hparams = {}
         hparams["n_epoch"] = model_config.getint("N_EPOCH")
@@ -12,15 +12,15 @@ class parameterParser:
         hparams["layer_dim"] = model_config.getint("LAYER_DIM")
         hparams["out_dim"] = model_config.getint("OUT_DIM")
         hparams["l2_drop_rate"] = model_config.getfloat("L2_DROP_RATE")
-        hparams["weight_decay"] = model_config.getint("WEIGHT_DECAY")
-        hparams["lr"] = model_config.getint("LR")
+        hparams["weight_decay"] = model_config.getfloat("WEIGHT_DECAY")
+        hparams["lr"] = model_config.getfloat("LR")
         hparams["optimizer"] = model_config.get("OPTIMIZER")
         hparams["loss_fn"] = model_config.get("LOSSFN")
         return hparams
         
     
 class SimpleDnn(nn.Module):
-    def __init__(self, input_dim, hidden_dim, layer_dim, output_dim, l2_dropp_rate):
+    def __init__(self, input_dim, hidden_dim, layer_dim, output_dim, l2_drop_rate):
         super(SimpleDnn, self).__init__()
         
         self.layer_1 = nn.Linear(input_dim, hidden_dim)

@@ -1,4 +1,4 @@
-import pytorch
+import torch
 from mlflow.tracking import MlflowClient
 
 class MlflowWriter():
@@ -13,19 +13,20 @@ class MlflowWriter():
             self.experiment_id = self.client.get_experiment_by_name(experiment_name).experiment_id
 
         self.run_id = self.client.create_run(self.experiment_id).info.run_id
+        
 
     def log_params_from_omegaconf_dict(self, params):
         for param_name, element in params.items():
             self._explore_recursive(param_name, element)
 
     def _explore_recursive(self, parent_name, element):
-        if isinstance(element, DictConfig):
+        if isinstance(element, dict):
             for k, v in element.items():
-                if isinstance(v, DictConfig) or isinstance(v, ListConfig):
+                if isinstance(v, dict) or isinstance(v, list):
                     self._explore_recursive(f'{parent_name}.{k}', v)
                 else:
                     self.client.log_param(self.run_id, f'{parent_name}.{k}', v)
-        elif isinstance(element, ListConfig):
+        elif isinstance(element, list):
             for i, v in enumerate(element):
                 self.client.log_param(self.run_id, f'{parent_name}.{i}', v)
 
@@ -36,8 +37,8 @@ class MlflowWriter():
     def log_param(self, key, value):
         self.client.log_param(self.run_id, key, value)
 
-    def log_metric(self, key, value):
-        self.client.log_metric(self.run_id, key, value)
+    def log_metric(self, key, value, step=None):
+        self.client.log_metric(self.run_id, key, value, step)
 
     def log_artifact(self, local_path):
         self.client.log_artifact(self.run_id, local_path)
