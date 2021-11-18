@@ -58,7 +58,8 @@ def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_
     # train_loader, val_loader, test_loader, test_loader_one = fp.get_dataloader(X_train, y_train, X_val,y_val, X_test, y_test,batch_size)
     # return train_loader, val_loader, test_loader, test_loader_one
     
-def train(fp,le):    
+def train(fp,le):  
+    print("Load train")
     obj_keys = ["X_train", "X_val", "y_train", "y_val"]
     X_train, X_val,  y_train, y_val= fp.load_numpy_datas(obj_keys)
 
@@ -93,6 +94,9 @@ def train(fp,le):
              n_features=1)
     le.plot_losses()
     
+    # decline end
+    le.terminated()
+    
 def valid(fp,le):
     obj_keys = ["X_test", "y_test"]
     X_test, y_test = fp.load_numpy_datas(obj_keys)
@@ -117,6 +121,18 @@ def make_parser():
         description="TBD",
         epilog="TBBD"
     )
+
+    parser.add_argument(
+        '-u','--user',
+        type=str, 
+        required=True,
+        help='exec user')    
+    
+    parser.add_argument(
+        '-s','--source',
+        type=str, 
+        required=True,
+        help='source ')    
 
     parser.add_argument(
         '-sym','--symbol',
@@ -194,13 +210,18 @@ def main(args):
     _id = arg_dict["model_id"]
     config_mode = arg_dict["config_mode"].upper()
     model_name = arg_dict["model_name"].upper()
+    mlflow_tags = {
+        "user":arg_dict["user"],
+        "source":arg_dict["source"],
+        "run_name": None
+    }
 
     # load all parent modules
     fp = featurePreprocess(_id)
     fp.load_general_config(source="ini", path=None,mode=config_mode)
     fp.load_model_config(source="ini", path=None,model_name=model_name)
     
-    le = LearningEvaluator(_id)
+    le = LearningEvaluator(_id, mlflow_tags)
     le.get_device()
     le.load_general_config(source="ini", path=None,mode=config_mode)
     le.load_model_config(source="ini", path=None, model_name=model_name)

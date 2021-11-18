@@ -21,17 +21,39 @@ import plotly.graph_objects as go
 from base_process import BaseProcess
 from model_modules import *
 
-
+from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME,MLFLOW_USER,MLFLOW_SOURCE_NAME
 
 class LearningEvaluator(BaseProcess):
-    def __init__(self, _id):
+    def __init__(self, _id, mlflow_tags):
         super().__init__(_id)
         self.id = _id
         self.model = None
         self.device = "cpu"
         self.train_losses = []
         self.val_losses = []
-        self.mlwriter = MlflowWriter(_id)
+        self.build_mlflow_run(**mlflow_tags)
+
+        
+    def build_mlflow_run(self, run_name=None, user=None, source=None):
+        run_name = dt.now().strftime("%Y%m%d%H%M%s") if run_name is None else run_name
+        user = 'ANONYMOUS' if user is None else user
+        source = 'PYTHON' if source  is None else source
+        self.mlflow_tags = {
+                MLFLOW_RUN_NAME:run_name,
+                MLFLOW_USER:user,
+                MLFLOW_SOURCE_NAME:source,
+            }
+        
+    def create_mlflow_run(self,tracking_uri=None):
+        #todo set outside
+        tracking_uri= "./tracking/mlruns"
+        client_kwargs = {
+            "tracking_uri":tracking_uri
+        }
+        self.mlwriter = MlflowWriter(self.id, self._logger, self.mlflow_tags, client_kwargs)
+        
+    def close_mlflow_run(self):
+        self.mlwriter.set_terminated()
                 
     def get_device(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -89,6 +111,9 @@ class LearningEvaluator(BaseProcess):
             "optimizer":self.optimizer_name,
             "loss_fn":self.loss_fn_name
         }
+        
+
+        self.create_mlflow_run()
         self.mlwriter.log_params_from_omegaconf_dict(dict_config)
         
         # start
@@ -125,7 +150,6 @@ class LearningEvaluator(BaseProcess):
                 )
         self.save_model()
         self._logger.info("[DONE] Training. ID={0}".format(self.id))        
-        self.mlwriter.set_terminated()
     
     def evaluate(self, test_loader, batch_size=1, n_features=1):
         with torch.no_grad():
@@ -192,4 +216,9 @@ class LearningEvaluator(BaseProcess):
         )
         data = [train_traj, val_traj]
 
-        plot(data, filename = 'basic-line')
+        local_path = plot(data, filename = 'basic-line')
+        self.mlwriter.log_artifact(local_path)
+        
+    def terminated(self):
+        #todo: more sophisticate
+        self.close_mlflow_run()
