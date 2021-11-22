@@ -2,6 +2,7 @@ import os,sys
 import logging
 import logging.config
 import argparse
+from datetime import datetime as dt
 os.environ['BASE_DIR'] =  '/Users/macico/Dropbox/btc'
 os.environ['KULOKO_DIR'] = os.path.join(os.environ['BASE_DIR'], "kuloko")
 os.environ['ALEISTER_DIR'] = os.path.join(os.environ['BASE_DIR'], "aleister")
@@ -59,7 +60,6 @@ def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_
     # return train_loader, val_loader, test_loader, test_loader_one
     
 def train(fp,le):  
-    print("Load train")
     obj_keys = ["X_train", "X_val", "y_train", "y_val"]
     X_train, X_val,  y_train, y_val= fp.load_numpy_datas(obj_keys)
 
@@ -97,23 +97,41 @@ def train(fp,le):
     # decline end
     le.terminated()
     
+    # 
+    
 def valid(fp,le):
     obj_keys = ["X_test", "y_test"]
     X_test, y_test = fp.load_numpy_datas(obj_keys)
     input_dim = X_test.shape[1]
-    model_params = {
-        'input_dim': input_dim,
-        'hidden_dim' : le.hparams["hidden_dim"],
-        'layer_dim' : le.hparams["layer_dim"],
-        'output_dim' : le.hparams["out_dim"],
-        'l2_drop_rate':le.hparams["l2_drop_rate"]
-    }
-    le.get_model_instance(le.model_name,model_params)
+    # model_params = {
+    #     'input_dim': input_dim,
+    #     'hidden_dim' : le.hparams["hidden_dim"],
+    #     'layer_dim' : le.hparams["layer_dim"],
+    #     'output_dim' : le.hparams["out_dim"],
+    #     'l2_drop_rate':le.hparams["l2_drop_rate"]
+    # }
+    # le.get_model_instance(le.model_name,model_params)
     batch_size = le.hparams["batch_size"]
+    
     _, _ ,test_loader, test_loader_one = fp.get_dataloader( X_test=X_test, y_test=y_test, batch_size=batch_size)
-    _ = le.get_model_save_path()
-    le.load_model_weight()
-    predictions, values, scores = le.evaluate(test_loader_one,batch_size=1, n_features=input_dim)
+    
+    lossfn_params = {}
+    le.get_loss_fn(le.hparams["optimizer"],{})
+
+    # optim_params = {
+    #     # 'params': le.model.parameters(),
+    #     'weight_decay': le.hparams["weight_decay"],
+    #     'lr':le.hparams["lr"]
+    #     }
+    
+    # le.get_optimizer(le.hparams["loss_fn"],optim_params)
+    
+
+    predictions, values = le.evaluate(test_loader_one)
+
+    
+    # decline end
+    le.terminated()
         
 def make_parser():
     parser = argparse.ArgumentParser(
@@ -207,46 +225,57 @@ def make_parser():
 def main(args):
     parser = make_parser()
     arg_dict = vars(parser.parse_args(args))
+
+    #meta
     _id = arg_dict["model_id"]
     config_mode = arg_dict["config_mode"].upper()
     model_name = arg_dict["model_name"].upper()
-    mlflow_tags = {
-        "user":arg_dict["user"],
-        "source":arg_dict["source"],
-        "run_name": None
-    }
+
+    # period
+    train_start = arg_dict["train_start_date"] if "train_start_date" in arg_dict.keys() else None
+    train_end = arg_dict["train_end_date"] if "train_end_date" in arg_dict.keys() else None
+    valid_start = arg_dict["valid_start_date"] if "valid_start_date" in arg_dict.keys() else None
+    valid_end = arg_dict["valid_end_date"]if "valid_end_date" in arg_dict.keys() else None
+    test_start = arg_dict["test_start_date"] if "test_start_date" in arg_dict.keys() else None
+    test_end = arg_dict["test_end_date"] if "test_end_date" in arg_dict.keys() else None
+
+    # sym
+    sym = arg_dict["symbol"] 
 
     # load all parent modules
     fp = featurePreprocess(_id)
     fp.load_general_config(source="ini", path=None,mode=config_mode)
     fp.load_model_config(source="ini", path=None,model_name=model_name)
-    
-    le = LearningEvaluator(_id, mlflow_tags)
-    le.get_device()
-    le.load_general_config(source="ini", path=None,mode=config_mode)
-    le.load_model_config(source="ini", path=None, model_name=model_name)
-    le.load_model_hparameters(model_name)
-    
-    # period
-    train_start = arg_dict["train_start"] if "train_start_date" in arg_dict.keys() else None
-    train_end = arg_dict["train_end"] if "train_end_date" in arg_dict.keys() else None
-    valid_start = arg_dict["valid_start"] if "valid_start_date" in arg_dict.keys() else None
-    valid_end = arg_dict["valid_end"]if "valid_end_date" in arg_dict.keys() else None
-    test_start = arg_dict["test_start"] if "test_start_date" in arg_dict.keys() else None
-    test_end = arg_dict["test_end"] if "test_end_date" in arg_dict.keys() else None
-    
-    # sym
-    sym = arg_dict["sym"] 
+
         
     if arg_dict["execute_mode"] == "prepro":
         preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_start, test_end)
     elif arg_dict["execute_mode"] == "train":
+        mlflow_tags = {
+            "user":arg_dict["user"],
+            "source":arg_dict["source"],
+            "run_name": f"TRAIN_{dt.now().strftime('%y%m%d%H%M%s')}"
+        }
+        le = LearningEvaluator(_id, mlflow_tags)
+        le.get_device()
+        le.load_general_config(source="ini", path=None,mode=config_mode)
+        le.load_model_config(source="ini", path=None, model_name=model_name)
+        le.load_model_hparameters(model_name)
         train(fp, le)
     elif arg_dict["execute_mode"] == "valid":
+        mlflow_tags = {
+            "user":arg_dict["user"],
+            "source":arg_dict["source"],
+            "run_name": f"VALID_{dt.now().strftime('%y%m%d%H%M%s')}"
+        }
+        le = LearningEvaluator(_id, mlflow_tags)
+        le.get_device()
+        le.load_general_config(source="ini", path=None,mode=config_mode)
+        le.load_model_config(source="ini", path=None, model_name=model_name)
+        le.load_model_hparameters(model_name)
         valid(fp, le)
     else:
         pass
-
 if __name__ == "__main__":
     main(args)
 

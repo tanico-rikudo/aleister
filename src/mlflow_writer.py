@@ -1,15 +1,22 @@
+import  os
 import torch
 import mlflow
+mlflow.set_registry_uri(os.environ['MLFLOW_TRACKING_DIR'] )
+mlflow.set_tracking_uri(os.environ['MLFLOW_TRACKING_DIR'] )
 from mlflow.tracking import MlflowClient
 from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME,MLFLOW_USER,MLFLOW_SOURCE_NAME
+    
 
 class MlflowWriter():
     """
     MLflow tracking wrapper
     """
-    def __init__(self, experiment_name, logger, run_tags, kwargs):
+
+    def __init__(logger, kwargs):
         self.client = MlflowClient(**kwargs)
         self._logger = logger
+        
+    def create_experiment(self, experiment_name, logger, run_tags):
         try:
             self.experiment_id = self.client.create_experiment(experiment_name)
         except:
@@ -22,6 +29,7 @@ class MlflowWriter():
         self._logger.info(f"Experiment id: {self.experiment.experiment_id}")
         self._logger.info(f"Artifact Location: {self.experiment.artifact_location}")
         self._logger.info("[DONE] Set up MLflow tracking")
+        
 
     def log_params_from_omegaconf_dict(self, params):
         for param_name, element in params.items():

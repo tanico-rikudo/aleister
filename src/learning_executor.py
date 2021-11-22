@@ -10,10 +10,11 @@ from torch.utils.tensorboard import SummaryWriter
 
 from sklearn.metrics import accuracy_score
 
-from mlflow_writer import MlflowWriter
+from mlflow_writer import *
 
 from datetime import datetime as dt
 import numpy as np
+import tempfile
 
 from plotly.offline import plot
 import plotly.graph_objects as go
@@ -21,7 +22,7 @@ import plotly.graph_objects as go
 from base_process import BaseProcess
 from model_modules import *
 
-from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME,MLFLOW_USER,MLFLOW_SOURCE_NAME
+import  mlflow
 
 class LearningEvaluator(BaseProcess):
     def __init__(self, _id, mlflow_tags):
@@ -46,11 +47,12 @@ class LearningEvaluator(BaseProcess):
         
     def create_mlflow_run(self,tracking_uri=None):
         #todo set outside
-        tracking_uri= "./tracking/mlruns"
+        tracking_uri= os.environ['MLFLOW_TRACKING_DIR'] 
         client_kwargs = {
             "tracking_uri":tracking_uri
         }
-        self.mlwriter = MlflowWriter(self.id, self._logger, self.mlflow_tags, client_kwargs)
+        self.mlwriter = MlflowWriter(self._logger,client_kwargs)
+        self.mlwriter.create_experiment(self.id,  self.mlflow_tags)
         
     def close_mlflow_run(self):
         self.mlwriter.set_terminated()
@@ -121,7 +123,6 @@ class LearningEvaluator(BaseProcess):
             batch_losses = []
             for x_batch, y_batch in train_loader:
                 self.optimizer.zero_grad()
-                # x_batch = x_batch.view([batch_size, -1, n_features]).to(device)
                 x_batch = x_batch.to(self.device)
                 y_batch = y_batch.to(self.device)
                 loss = self.train_step(x_batch, y_batch)
@@ -148,15 +149,33 @@ class LearningEvaluator(BaseProcess):
                 self._logger.info(
                     f"[{epoch}/{n_epochs}] Training loss: {training_loss:.4f}\t Validation loss: {validation_loss:.4f}"
                 )
-        self.save_model()
+        # self.save_model()
+        self.save_mlflow_model()
         self._logger.info("[DONE] Training. ID={0}".format(self.id))        
     
-    def evaluate(self, test_loader, batch_size=1, n_features=1):
+    def evaluate(self, test_loader):
+        
+        self._logger.info("[Start] Evaluate. ID={0}".format(self.id))
+        
+        # load weight
+        _ = self.get_model_save_path()  #todo : designate path
+        
+        # mlflow
+        # dict_config = {
+        #     "batch_size":1,
+        #     "n_epochs":1,
+        #     "optimizer":self.optimizer_name,
+        #     "loss_fn":self.loss_fn_name
+        # }
+        
+        self.create_mlflow_run()
+        self.load_mlflow_model()
+        self.mlwriter.log_params_from_omegaconf_dict(dict_config)
+        
         with torch.no_grad():
             predictions = np.array([])
             truths  = np.array([])
             for x_test, y_test in test_loader:
-                # x_test = x_test.view([batch_size, -1, n_features]).to(device)
                 x_test = x_test.to(self.device)
                 y_test = y_test.to(self.device)
                 self.model.eval()
@@ -169,12 +188,9 @@ class LearningEvaluator(BaseProcess):
         self.truths = truths
 
         acc = accuracy_score(truths, predictions)
-        scores={
-            "accuracy":acc
-        }
-        self.mlwriter.log_metric('accuracy',  acc) 
-        
-        return predictions, truths, scores
+        self.mlwriter.log_metric('accuracy', acc)
+
+        return predictions, truths
     
     def prediction(x):
         with torch.no_grad():
@@ -190,15 +206,38 @@ class LearningEvaluator(BaseProcess):
         self.save_path = os.path.join(_dir, "torch_{0}_model.path".format(_id) )
         return self.save_path
         
-    def save_model(self,save_path=None):
+    def save_model(self,save_path=None, module='pytorch'):
         save_path = self.save_path if save_path is None else save_path
         torch.save(self.model.to(self.device).state_dict(), save_path)
         self._logger.info("[DONE] Save Model. Path={0}".format(save_path))
         
-    def load_model_weight(self, load_path=None):
-        load_path = self.save_path if load_path is None else load_path
-        self.model.load_state_dict(torch.load(load_path))#.to(self.device)
-        self._logger.info("[DONE] Load Model. Path={0}".format(load_path))
+    def save_mlflow_model(self):
+        # model_uri = "runs:/{}/model".format(self.mlwriter.run_id)
+        # self._logger.info("[DONE] Save Model. Path={0}".format(model_uri))
+        # mlflow.pytorch.log_model(self.model, 'model')
+
+        with tempfile.TemporaryDirectory() as tdname:
+            pytorch_model_path = os.path.join(tdname, "model")
+            self._logger.info(f"[DONE] Save Model to tmp: {pytorch_model_path}")
+            mlflow.pytorch.save_model(self.model, pytorch_model_path)
+            self.mlwriter.log_artifact(pytorch_model_path)
+            self._logger.info("[DONE] Save Model. Path={0}".format(mlflow.get_artifact_uri()))
+        
+    def load_mlflow_model(self):
+        model_uri = os.path.join(self.mlwriter.experiment.artifact_location,"model")
+        # model_uri = "runs:/{}/model".format(self.mlwriter.run_id)
+        # self.model = mlflow.pytorch.load_model(model_uri)
+        name="tttt"
+        # mv = self.mlwriter.client.create_model_version(name, model_uri, run.info.run_id)
+        # artifact_uri = self.mlwriter.client.get_model_version_download_uri(name, mv.version)
+        self._logger.info("[DONE] Load Model. Path={0}".format(model_uri))
+        self.model = mlflow.pytorch.load_model(mlflow.get_artifact_uri("model"))
+        self._logger.info("[DONE] Load Model. Path={0}".format(model_uri))
+        
+    # def load_model_weight(self, load_path=None):
+    #     load_path = self.save_path if load_path is None else load_path
+    #     self.model.load_state_dict(torch.load(load_path))#.to(self.device)
+    #     self._logger.info("[DONE] Load Model. Path={0}".format(load_path))
 
     def plot_losses(self):
         """
@@ -216,7 +255,7 @@ class LearningEvaluator(BaseProcess):
         )
         data = [train_traj, val_traj]
 
-        local_path = plot(data, filename = 'basic-line')
+        local_path = plot(data, filename = 'basic-line.html')
         self.mlwriter.log_artifact(local_path)
         
     def terminated(self):
