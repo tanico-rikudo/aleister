@@ -1,8 +1,9 @@
 import  os, sys
 import torch
 from torch.utils.data import TensorDataset, DataLoader
-from sklearn.preprocessing import MinMaxScaler, StandardScaler, MaxAbsScaler, RobustScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, MaxAbsScaler, RobustScaler,LabelBinarizer
 from sklearn.model_selection import train_test_split
+import pandas as pd
 from util import utils
 from util.exceptions import *
 from util import daylib
@@ -97,6 +98,11 @@ class featurePreprocess(BaseProcess):
     def convert_dataset(self, Xy, ans_col, split_rule, test_ratio=0.4, valid_ratio=0.5, 
                         train_start=None, train_end=None, valid_start=None, valid_end=None, test_start=None, test_end=None):
         X, y = self.feature_label_split(df=Xy, target_col=ans_col)
+
+        lb =LabelBinarizer()
+        y_onehot = lb.fit_transform(y)
+        idxs = y.index
+        y = pd.DataFrame(y_onehot,columns=lb.classes_, index=idxs)
         if split_rule == 'ratio':
             X_train, X_val, X_test, y_train, y_val, y_test = self.train_val_test_ratio_split(X, y, test_ratio, valid_ratio)
         elif split_rule == 'period':
@@ -109,7 +115,7 @@ class featurePreprocess(BaseProcess):
     
     def save_numpy_datas(self,**kwargs):
         for key, obj in kwargs.items():
-            save_path = os.path.join(self.save_dir, "{0}".format(key) )
+            save_path = os.path.join(self.save_dir, "{0}.jbl".format(key) )
             try:
                 utils.saveJbl(obj,save_path)
                 self._logger.info("[DONE] Save Prepro data. Key={0}, path={1}".format(key, save_path))
@@ -119,7 +125,7 @@ class featurePreprocess(BaseProcess):
     def load_numpy_datas(self,args):
         objs = {}
         for key in args:
-            load_path = os.path.join(self.save_dir, "{0}".format(key) )
+            load_path = os.path.join(self.save_dir, "{0}.jbl".format(key) )
             try:
                 obj = utils.loadJbl(load_path)
                 self._logger.info("[DONE] Load Prepro data. Key={0}, path={1}".format(key, load_path))

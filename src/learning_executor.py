@@ -31,6 +31,7 @@ class LearningEvaluator(BaseProcess):
         self.id = _id
         self.model = None
         self.device = "cpu"
+        
         self.train_losses = []
         self.val_losses = []
         
@@ -97,6 +98,12 @@ class LearningEvaluator(BaseProcess):
         self._logger.info('[DONE]Load hyper params.')
         
 
+    def convert_model_value(self,y):
+        y_pred_idxs = map(lambda yy: yy.argmax(), y)
+        y_pred = list(map( lambda yy : self.out_class[yy], y_pred_idxs))
+        return y_pred
+        
+
     def train_step(self, x, y):
         self.model.train()
         yhat = self.model(x)
@@ -105,7 +112,7 @@ class LearningEvaluator(BaseProcess):
         self.optimizer.step()
         return loss.item()
 
-    def train(self, train_loader, val_loader, batch_size=64, n_epochs=50, n_features=1): 
+    def train(self, train_loader, val_loader, batch_size=64, n_epochs=10, n_features=1): 
         """[summary]
 
         Args:
@@ -120,7 +127,13 @@ class LearningEvaluator(BaseProcess):
         """
         self._logger.info("[Start] Training. ID={0}".format(self.id))
         # _ = self.get_model_save_path()  #todo : designate path
-        self.out_class = self.model_config.get("OUT_CLASS")
+        
+        #setup
+        self.prediction = {}
+        self.predictions_out = {}
+        self.truths  = {}
+        self.truths_out = {}
+        self.out_class = eval(self.model_config.get("OUT_CLASS"))
         
         # mlflow
         dict_config = {
@@ -149,22 +162,48 @@ class LearningEvaluator(BaseProcess):
 
             with torch.no_grad():
                 batch_val_losses = []
+                predictions = []
+                truths  = []
                 for x_val, y_val in val_loader:
-                    # x_val = x_val.view([batch_size, -1, n_features]).to(device)
-                    x_batch = x_batch.to(self.device)
+                    x_val = x_val.to(self.device)
                     y_val = y_val.to(self.device)
                     self.model.eval()
                     yhat = self.model(x_val)
+                    predictions.append(yhat.to(self.device).detach().numpy()[0])
+                    truths.append(y_val.to(self.device).detach().numpy()[0])
+                    
                     val_loss = self.loss_fn(y_val, yhat).item()
                     batch_val_losses.append(val_loss)
+                    
                 validation_loss = np.mean(batch_val_losses)
                 self.val_losses.append(validation_loss)
+                
+                # record
+                self.prediction["val"] = predictions
+                self.truths["val"] = truths
+                truths_out  = self.convert_model_value(truths)
+                predictions_out = self.convert_model_value(predictions)
+                
+                self.truths_out["val"] = truths_out 
+                self.predictions_out["val"] = predictions_out 
+                acc = accuracy_score(truths_out, predictions_out)
+                
+                self.mlwriter.log_metric('valid_acc', acc, epoch)
                 self.mlwriter.log_metric('valid_loss', validation_loss, epoch)
+            
 
             if (epoch <= 10) | (epoch % 50 == 0):
                 self._logger.info(
                     f"[{epoch}/{n_epochs}] Training loss: {training_loss:.4f}\t Validation loss: {validation_loss:.4f}"
                 )
+                
+        # record last 
+        
+        self.save_numpy_obj(predictions, "val_preds.csv")
+        self.save_numpy_obj(truths, "val_truth.csv")
+        self.save_numpy_obj(predictions_out, "val_preds_out.csv")
+        self.save_numpy_obj(truths_out, "val_truth_out.csv")
+
         # self.save_model()
         self.save_mlflow_model()
         self._logger.info("[DONE] Training. ID={0}".format(self.id))        
@@ -174,39 +213,47 @@ class LearningEvaluator(BaseProcess):
     def evaluate(self, test_loader):
         self._logger.info("[Start] Evaluate. ID={0}".format(self.id))
         with torch.no_grad():
-            predictions = np.array([])
-            truths  = np.array([])
+            predictions = []
+            truths  = []
             for x_test, y_test in test_loader:
                 x_test = x_test.to(self.device)
                 y_test = y_test.to(self.device)
                 self.model.eval()
                 yhat = self.model(x_test)
-                predictions = np.append(predictions, yhat.to(self.device).detach().numpy())
-                truths = np.append(truths, y_test.to(self.device).detach().numpy())
+                predictions.append(yhat.to(self.device).detach().numpy()[0])
+                truths.append(y_test.to(self.device).detach().numpy()[0])
                 
-        # record acc 
-        self.prediction = predictions
-        self.truths = truths
-
-        acc = accuracy_score(truths, predictions)
+        # record 
+        self.prediction["eval"] = predictions
+        self.truths["eval"] = truths
+        truths_out  = self.convert_model_value(truths)
+        predictions_out = self.convert_model_value(predictions)
+        
+        self.truths_out["eval"] = truths_out 
+        self.predictions_out["eval"] = predictions_out 
+        acc = accuracy_score(truths_out, predictions_out)
         self._logger.info(f"Evaluate: acc score={acc}")
         
         if self.mlwriter is not None:
-            self.mlwriter.log_metric('accuracy', acc)
-            with tempfile.TemporaryDirectory() as tdname:
-                pred_path = os.path.join(tdname, "eval_preds.csv")
-                truth_path = os.path.join(tdname, "eval_truth.csv")
-                np.savetxt(pred_path, predictions, delimiter=',', fmt='%d')
-                self._logger.info(f"[DONE] Save preds to tmp: {pred_path}")
-                np.savetxt(truth_path, truths, delimiter=',', fmt='%d')
-                self._logger.info(f"[DONE] Save truths to tmp: {truth_path}")
-                save_path = self.mlwriter.log_artifact(pred_path)
-                self._logger.info("[DONE] Save preds. Path={0}".format(save_path))
-                save_path = self.mlwriter.log_artifact(truth_path)
-                self._logger.info("[DONE] Save truth. Path={0}".format(save_path))
+            self.mlwriter.log_metric('test_acc', acc)
+            self.save_numpy_obj(predictions, "eval_preds.csv")
+            self.save_numpy_obj(truths, "eval_truth.csv")
+            self.save_numpy_obj(predictions_out, "eval_preds_out.csv")
+            self.save_numpy_obj(truths_out, "eval_truth_out.csv")
+
                 
         self._logger.info("[END] Evaluate. ID={0}".format(self.id))
         return predictions, truths
+    
+    
+    def save_numpy_obj(self, obj, filename):
+        with tempfile.TemporaryDirectory() as tdname:
+            path = os.path.join(tdname, filename)
+            np.savetxt(path, obj, delimiter=',', fmt='%d')
+            # self._logger.info(f"[DONE] Save obj to tmp: {path}")
+            save_path = self.mlwriter.log_artifact(path)
+            self._logger.info("[DONE] Save obj. Filename={0}".format(filename))
+        
     
     def prediction(x):
         with torch.no_grad():
@@ -214,6 +261,7 @@ class LearningEvaluator(BaseProcess):
             self.model.eval()
             yhat = self.model(x_test)
             pred = yhat.to(self.device).detach().numpy()
+            yhat = self.convert_model_value(y_hat)
         return pred
     
     # def get_model_save_path(self, _dir=None, _id=None):
@@ -269,7 +317,7 @@ class LearningEvaluator(BaseProcess):
 
         with tempfile.TemporaryDirectory() as tdname:
             path = os.path.join(tdname, "epoch_trajectory.html")
-            local_path = plot(data, filename = path, auto_open=True)
+            local_path = plot(data, filename = path, auto_open=False)
             self._logger.info(f"[DONE] Save plot to tmp: {local_path}")
             save_path = self.mlwriter.log_artifact(local_path)
             self._logger.info("[DONE] Save plot. Path={0}".format(save_path))

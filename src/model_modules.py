@@ -47,10 +47,10 @@ class SimpleDnn(nn.Module):
         x = self.layer_3(x)
         # x = self.batchnorm3(x)
         # x = self.relu(x)
-        x = self.dropout(x)
+        x = self.dropout(x)    
         
         x = self.layer_out(x)
-        x = F.softmax(x, dim=0)
+        x = F.softmax(x, dim=1)
         
         return x
     
