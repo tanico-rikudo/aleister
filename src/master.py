@@ -28,7 +28,7 @@ from util.config import ConfigManager
 
 cm = ConfigManager(os.environ['KULOKO_INI'])
 logger = cm.load_log_config(os.path.join(LOGDIR,'logging.log'),log_name="ALEISTER")
-
+        
 def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_start, test_end):
     # gen data 
     dg =  DataGen()
@@ -97,11 +97,17 @@ def train(fp,le):
     # decline end
     le.terminated()
     
-    # 
+    # validation if data exist
+    test_out_of_data(fp, le)
     
-def valid(fp,le):
+    
+def test_out_of_data(fp,le):
     obj_keys = ["X_test", "y_test"]
     X_test, y_test = fp.load_numpy_datas(obj_keys)
+    if X_test is None:
+        print("No test data.")
+        return
+    
     input_dim = X_test.shape[1]
     # model_params = {
     #     'input_dim': input_dim,
@@ -162,7 +168,7 @@ def make_parser():
         '-mode','--execute_mode',
         type=str, 
         required=True,
-        choices=['train', 'prepro', 'valid'],
+        choices=[ 'prepro','train','valid'],
         help='Execution mode. ')
     
     parser.add_argument(
@@ -262,18 +268,18 @@ def main(args):
         le.load_model_config(source="ini", path=None, model_name=model_name)
         le.load_model_hparameters(model_name)
         train(fp, le)
-    elif arg_dict["execute_mode"] == "valid":
-        mlflow_tags = {
-            "user":arg_dict["user"],
-            "source":arg_dict["source"],
-            "run_name": f"VALID_{dt.now().strftime('%y%m%d%H%M%s')}"
-        }
-        le = LearningEvaluator(_id, mlflow_tags)
-        le.get_device()
-        le.load_general_config(source="ini", path=None,mode=config_mode)
-        le.load_model_config(source="ini", path=None, model_name=model_name)
-        le.load_model_hparameters(model_name)
-        valid(fp, le)
+    # elif arg_dict["execute_mode"] == "valid":
+    #     mlflow_tags = {
+    #         "user":arg_dict["user"],
+    #         "source":arg_dict["source"],
+    #         "run_name": f"VALID_{dt.now().strftime('%y%m%d%H%M%s')}"
+    #     }
+    #     le = LearningEvaluator(_id, mlflow_tags)
+    #     le.get_device()
+    #     le.load_general_config(source="ini", path=None,mode=config_mode)
+    #     le.load_model_config(source="ini", path=None, model_name=model_name)
+    #     le.load_model_hparameters(model_name)
+    #     valid(fp, le)
     else:
         pass
 if __name__ == "__main__":

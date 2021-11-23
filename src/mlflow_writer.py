@@ -1,8 +1,8 @@
 import  os
 import torch
 import mlflow
-mlflow.set_registry_uri(os.environ['MLFLOW_TRACKING_DIR'] )
-mlflow.set_tracking_uri(os.environ['MLFLOW_TRACKING_DIR'] )
+mlflow.set_registry_uri(os.environ['MLFLOW_TRACKING_URI'] )
+mlflow.set_tracking_uri(os.environ['MLFLOW_ARTIFACTS_URI'] )
 from mlflow.tracking import MlflowClient
 from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME,MLFLOW_USER,MLFLOW_SOURCE_NAME
     
@@ -12,11 +12,11 @@ class MlflowWriter():
     MLflow tracking wrapper
     """
 
-    def __init__(logger, kwargs):
+    def __init__(self,logger, kwargs):
         self.client = MlflowClient(**kwargs)
         self._logger = logger
         
-    def create_experiment(self, experiment_name, logger, run_tags):
+    def create_experiment(self, experiment_name, run_tags):
         try:
             self.experiment_id = self.client.create_experiment(experiment_name)
         except:
@@ -29,6 +29,40 @@ class MlflowWriter():
         self._logger.info(f"Experiment id: {self.experiment.experiment_id}")
         self._logger.info(f"Artifact Location: {self.experiment.artifact_location}")
         self._logger.info("[DONE] Set up MLflow tracking")
+        
+    def register_model(self, model_name):
+        """
+        Register model into model  registory
+        Args:
+            model_name (str): uninque name 
+        """
+        try:
+            self.client.create_registered_model(model_name)
+        except Exception as e:
+            self._logger.warn("[Failure] Cannot regist model. Name=f'{model_name}'. :{e}")
+        pass
+        
+    def print_registered_model_info(self, rm):
+        s = f"name: {rm.name}, \
+            tags: {rm.tags}, \
+            description: {rm.description}"
+        print(s)
+        return  s
+
+        
+    def create_model_version(self, model_name, desc=""):
+        mv = self.client.create_model_version(
+            name=model_name,
+            source=os.path.join(self.experiment.artifact_location, self.run_id, "artifacts", "model"),
+            run_id=self.run_id,
+            description=desc
+        )
+        self._logger.info("[DONE] Create modek version")
+        self._logger.info("Name: {}".format(mv.name))
+        self._logger.info("Version: {}".format(mv.version))
+        self._logger.info("Description: {}".format(mv.description))
+        self._logger.info("Status: {}".format(mv.status))
+        self._logger.info("Stage: {}".format(mv.current_stage))
         
 
     def log_params_from_omegaconf_dict(self, params):
