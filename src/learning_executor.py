@@ -268,7 +268,7 @@ class LearningEvaluator(BaseProcess):
 
         with tempfile.TemporaryDirectory() as tdname:
             path = os.path.join(tdname, "epoch_trajectory.html")
-            local_path = plot(data, filename = path)
+            local_path = plot(data, filename = path, auto_open=True)
             self._logger.info(f"[DONE] Save plot to tmp: {local_path}")
             save_path = self.mlwriter.log_artifact(local_path)
             self._logger.info("[DONE] Save plot. Path={0}".format(save_path))
