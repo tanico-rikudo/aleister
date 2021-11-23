@@ -119,7 +119,8 @@ class LearningEvaluator(BaseProcess):
             str: mlflow runid
         """
         self._logger.info("[Start] Training. ID={0}".format(self.id))
-        _ = self.get_model_save_path()  #todo : designate path
+        # _ = self.get_model_save_path()  #todo : designate path
+        self.out_class = self.model_config.get("OUT_CLASS")
         
         # mlflow
         dict_config = {
@@ -215,16 +216,16 @@ class LearningEvaluator(BaseProcess):
             pred = yhat.to(self.device).detach().numpy()
         return pred
     
-    def get_model_save_path(self, _dir=None, _id=None):
-        _id = self.id if _id is None else _id
-        _dir = self.save_dir if _dir is None else _dir
-        self.save_path = os.path.join(_dir, "torch_{0}_model.path".format(_id) )
-        return self.save_path
+    # def get_model_save_path(self, _dir=None, _id=None):
+    #     _id = self.id if _id is None else _id
+    #     _dir = self.save_dir if _dir is None else _dir
+    #     self.save_path = os.path.join(_dir, "torch_{0}_model.path".format(_id) )
+    #     return self.save_path
         
-    def save_model(self,save_path=None, module='pytorch'):
-        save_path = self.save_path if save_path is None else save_path
-        torch.save(self.model.to(self.device).state_dict(), save_path)
-        self._logger.info("[DONE] Save Model. Path={0}".format(save_path))
+    # def save_model(self,save_path=None, module='pytorch'):
+    #     save_path = self.save_path if save_path is None else save_path
+    #     torch.save(self.model.to(self.device).state_dict(), save_path)
+    #     self._logger.info("[DONE] Save Model. Path={0}".format(save_path))
         
     def save_mlflow_model(self):
         with tempfile.TemporaryDirectory() as tdname:
