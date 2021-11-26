@@ -6,6 +6,7 @@ class parameterParser:
     @staticmethod
     def sdnn(model_config):
         hparams = {}
+        hparams["structure_params"] = ["hidden_dim","layer_dim","out_dim","l2_drop_rate"]
         hparams["n_epoch"] = model_config.getint("N_EPOCH")
         hparams["batch_size"] = model_config.getint("BATCHSIZE")
         hparams["hidden_dim"] = model_config.getint("HIDDEN_DIM")
@@ -19,8 +20,9 @@ class parameterParser:
         return hparams
     
     @staticmethod
-    def lstm(model_config):
+    def slstm(model_config):
         hparams = {}
+        hparams["structure_params"] = ["hidden_dim","layer_dim","out_dim","l2_drop_rate"]
         hparams["n_epoch"] = model_config.getint("N_EPOCH")
         hparams["batch_size"] = model_config.getint("BATCHSIZE")
         hparams["hidden_dim"] = model_config.getint("HIDDEN_DIM")
@@ -49,7 +51,8 @@ class SimpleDnn(nn.Module):
         self.batchnorm2 = nn.BatchNorm1d(layer_dim)
         # self.batchnorm3 = nn.BatchNorm1d(64)
         
-    def forward(self, x):
+    def forward(self, xs):
+        x = xs[0]
         x = self.layer_1(x)
         # x = self.batchnorm1(x)
         # x = self.relu(x)
@@ -70,37 +73,35 @@ class SimpleDnn(nn.Module):
         return x
     
 
-class SLSTM(nn.Module):
+class SimpleLSTM(nn.Module):
 
-    def __init__(self, dimension=128):
-        super(LSTM, self).__init__()
+    def __init__(self, input_dim, output_dim, hidden_dim, num_layers):
+        super(SimpleLSTM, self).__init__()
+        
+        self.output_dim = output_dim
+        self.num_layers = num_layers
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.seq_length = seq_length
+        
+        self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim,
+                            num_layers=num_layers, batch_first=True)
+        
+        self.fc = nn.Linear(hidden_dim, output_dim)
 
-        self.embedding = nn.Embedding(len(text_field.vocab), 300)
-        self.dimension = dimension
-        self.lstm = nn.LSTM(input_size=300,
-                            hidden_size=dimension,
-                            num_layers=1,
-                            batch_first=True,
-                            bidirectional=True)
-        self.drop = nn.Dropout(p=0.5)
-
-        self.fc = nn.Linear(2*dimension, 1)
-
-    def forward(self, text, text_len):
-
-        text_emb = self.embedding(text)
-
-        packed_input = pack_padded_sequence(text_emb, text_len, batch_first=True, enforce_sorted=False)
-        packed_output, _ = self.lstm(packed_input)
-        output, _ = pad_packed_sequence(packed_output, batch_first=True)
-
-        out_forward = output[range(len(output)), text_len - 1, :self.dimension]
-        out_reverse = output[:, 0, self.dimension:]
-        out_reduced = torch.cat((out_forward, out_reverse), 1)
-        text_fea = self.drop(out_reduced)
-
-        text_fea = self.fc(text_fea)
-        text_fea = torch.squeeze(text_fea, 1)
-        text_out = torch.sigmoid(text_fea)
-
-        return text_out
+    def forward(self, xs):
+        x = xs[0]
+        h_0 = Variable(torch.zeros(
+            self.num_layers, x.size(0), self.hidden_dim))
+        
+        c_0 = Variable(torch.zeros(
+            self.num_layers, x.size(0), self.hidden_dim))
+        
+        # Propagate input through LSTM
+        ula, (h_out, _) = self.lstm(x, (h_0, c_0))
+        
+        h_out = h_out.view(-1, self.hidden_dim)
+        
+        out = self.fc(h_out)
+        
+        return out

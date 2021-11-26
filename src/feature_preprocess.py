@@ -141,6 +141,49 @@ class featurePreprocess(BaseProcess):
             test_loader_one = DataLoader(test, batch_size=1, shuffle=False, drop_last=True)
         self._logger.info("[DONE] Create Data Loader")
         return train_loader, val_loader, test_loader, test_loader_one
+    
+    def get_multi_sequence_dataloader(self, X_trains= None, y_train= None, X_vals= None,y_val= None, X_tests=None, y_test=None, batch_size=64):
+        """
+        Create Dataloader feeding multi-input
+        Args:
+            X_trains (list, optional): ndarray list. Defaults to None.
+            y_train (ndarray, optional): answer. Defaults to None.
+            X_vals (list, optional): ndarray list. Defaults to None.
+            y_val (ndarray, optional): answer. Defaults to None.
+            X_tests (ndarray, optional): ndarray list. Defaults to None.
+            y_test (ndarray, optional): answer. Defaults to None.
+            batch_size (int, optional): batch_size. Defaults to 64.
+
+        Returns:
+            tuple : dataloaders
+        """
+        train_loader = None
+        if X_train is not None:
+            train_features = [ torch.Tensor(X_train) for X_train in X_trains] 
+            train_targets = torch.Tensor(y_train)
+            
+            # make dataset 
+            train = SequenceDataset(*train_features, train_targets)
+            
+            # Convert to  loader
+            train_loader = DataLoader(train, batch_size=batch_size, shuffle=False, drop_last=True)
+            
+        val_loader = None          
+        if X_val is not None:
+            val_features = [ torch.Tensor(X_val) for X_val in X_vals] 
+            val_targets = torch.Tensor(y_val)
+            val = TensorDataset(*val_features, val_targets)
+            val_loader = DataLoader(val, batch_size=batch_size, shuffle=False, drop_last=True)
+        
+        test_loader, test_loader_one = None, None
+        if X_test is not None:
+            test_features = [ torch.Tensor(X_test) for X_test in X_tests] 
+            test_targets = torch.Tensor(y_test)
+            test = TensorDataset(*test_features, test_targets)
+            test_loader = DataLoader(test, batch_size=batch_size, shuffle=False, drop_last=True)
+            test_loader_one = DataLoader(test, batch_size=1, shuffle=False, drop_last=True)
+        self._logger.info("[DONE] Create Data Loader")
+        return train_loader, val_loader, test_loader, test_loader_one
 
     def convert_dataset(self, Xy, ans_col, split_rule, test_ratio=0.4, valid_ratio=0.5, 
                         train_start=None, train_end=None, valid_start=None, valid_end=None, test_start=None, test_end=None):

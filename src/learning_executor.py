@@ -83,7 +83,8 @@ class LearningEvaluator(BaseProcess):
         
     def get_model_instance(self, model_name, model_params):
         models = {
-            "sdnn": SimpleDnn
+            "sdnn": SimpleDnn,
+            "slstm": SimpleLSTM
         }
         self.model  =  models.get(model_name.lower())(**model_params)
         self.model_name = model_name
@@ -91,7 +92,8 @@ class LearningEvaluator(BaseProcess):
         
     def load_model_hparameters(self, model_name):
         hparams = {
-            "sdnn": parameterParser.sdnn
+            "sdnn": parameterParser.sdnn,
+            "slstm": parameterParser.slstm
         }
         self.model_name = model_name
         self.hparams =  hparams.get(model_name.lower())(self.model_config)
@@ -104,13 +106,29 @@ class LearningEvaluator(BaseProcess):
         return y_pred
         
 
-    def train_step(self, x, y):
+    def train_step(self, xs, y):
+        xs = xs.to(self.device)
+        y = y.to(self.device)
+        
         self.model.train()
-        yhat = self.model(x)
+        yhat = self.model(xs)
         loss = self.loss_fn(y, yhat)
         loss.backward()
         self.optimizer.step()
         return loss.item()
+    
+    def eval_step(self, xs, y):
+        xs = xs.to(self.device)
+        y = y.to(self.device)
+        
+        self.model.eval()
+        yhat = self.model(x_val)
+        prediction = yhat.to(self.device).detach().numpy()[0]
+        truth =  y.to(self.device).detach().numpy()[0]
+        
+        loss = self.loss_fn(truth, prediction).item()
+        
+        return prediction, truth, loss
 
     def train(self, train_loader, val_loader, batch_size=64, n_epochs=10, n_features=1): 
         """[summary]
@@ -150,11 +168,10 @@ class LearningEvaluator(BaseProcess):
         # start
         for epoch in range(1, n_epochs + 1):
             batch_losses = []
-            for x_batch, y_batch in train_loader:
+            for batch_data in train_loader:
+                x_batchs, y_batch = batch_data[:-1],batch_data[-1]
                 self.optimizer.zero_grad()
-                x_batch = x_batch.to(self.device)
-                y_batch = y_batch.to(self.device)
-                loss = self.train_step(x_batch, y_batch)
+                loss = self.train_step(x_batchs, y_batch)
                 batch_losses.append(loss)
             training_loss = np.mean(batch_losses)
             self.train_losses.append(training_loss)
@@ -164,28 +181,20 @@ class LearningEvaluator(BaseProcess):
                 batch_val_losses = []
                 predictions = []
                 truths  = []
-                for x_val, y_val in val_loader:
-                    x_val = x_val.to(self.device)
-                    y_val = y_val.to(self.device)
-                    self.model.eval()
-                    yhat = self.model(x_val)
-                    predictions.append(yhat.to(self.device).detach().numpy()[0])
-                    truths.append(y_val.to(self.device).detach().numpy()[0])
-                    
-                    val_loss = self.loss_fn(y_val, yhat).item()
+                for batch_data in val_loader:
+                    x_vals, y_val =  batch_data[:-1],batch_data[-1]
+                    prediction, truth, val_loss =  self.train_step(x_vals, y_val)
+                    predictions.append(prediction)
+                    truths.append(truth)
                     batch_val_losses.append(val_loss)
                     
                 validation_loss = np.mean(batch_val_losses)
                 self.val_losses.append(validation_loss)
                 
                 # record
-                self.prediction["val"] = predictions
-                self.truths["val"] = truths
-                truths_out  = self.convert_model_value(truths)
-                predictions_out = self.convert_model_value(predictions)
-                
-                self.truths_out["val"] = truths_out 
-                self.predictions_out["val"] = predictions_out 
+                self.prediction["val"],self.truths["val"]  = predictions,truths
+                predictions_out, truths_out  = self.convert_model_value(predictions), self.convert_model_value(truths)
+                self.predictions_out["val"] , self.truths_out["val"] = predictions_out, truths_out 
                 acc = accuracy_score(truths_out, predictions_out)
                 
                 self.mlwriter.log_metric('valid_acc', acc, epoch)
@@ -215,22 +224,17 @@ class LearningEvaluator(BaseProcess):
         with torch.no_grad():
             predictions = []
             truths  = []
-            for x_test, y_test in test_loader:
-                x_test = x_test.to(self.device)
-                y_test = y_test.to(self.device)
-                self.model.eval()
-                yhat = self.model(x_test)
-                predictions.append(yhat.to(self.device).detach().numpy()[0])
-                truths.append(y_test.to(self.device).detach().numpy()[0])
+            for batch_data in test_loader:
+                x_tests, y_test =  batch_data[:-1],batch_data[-1]
+                prediction, truth, val_loss =  self.train_step(x_tests, y_test)
+                predictions.append(prediction)
+                truths.append(truth)
                 
         # record 
-        self.prediction["eval"] = predictions
-        self.truths["eval"] = truths
-        truths_out  = self.convert_model_value(truths)
-        predictions_out = self.convert_model_value(predictions)
+        self.prediction["eval"], self.truths["eval"] = predictions,truths
+        predictions_out, truths_out  = self.convert_model_value(predictions), self.convert_model_value(truths)
+        self.predictions_out["eval"] , self.truths_out["eval"] = predictions_out, truths_out  
         
-        self.truths_out["eval"] = truths_out 
-        self.predictions_out["eval"] = predictions_out 
         acc = accuracy_score(truths_out, predictions_out)
         self._logger.info(f"Evaluate: acc score={acc}")
         
