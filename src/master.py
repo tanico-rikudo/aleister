@@ -56,8 +56,6 @@ def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_
         "y_train":y_train, "y_val":y_val, "y_test":y_test,
         "x_scaler":x_scaler
     })
-    # train_loader, val_loader, test_loader, test_loader_one = fp.get_dataloader(X_train, y_train, X_val,y_val, X_test, y_test,batch_size)
-    # return train_loader, val_loader, test_loader, test_loader_one
     
 def train(fp,le):  
     obj_keys = ["X_train", "X_val", "y_train", "y_val"]
@@ -65,13 +63,9 @@ def train(fp,le):
 
      # train set up
     input_dim = X_train.shape[1]
-    model_params = {
-        'input_dim': input_dim,
-        'hidden_dim' : le.hparams["hidden_dim"],
-        'layer_dim' : le.hparams["layer_dim"],
-        'output_dim' : le.hparams["out_dim"],
-        'l2_drop_rate':le.hparams["l2_drop_rate"]
-    }
+    model_params = { _k for _k, _v in le.hparams["structure_params"]}
+    model_params['input_dim'] = input_dim
+    
     le.get_model_instance(le.model_name,model_params)
     
     batch_size = le.hparams["batch_size"]
