@@ -7,6 +7,8 @@ class parameterParser:
     def sdnn(model_config):
         hparams = {}
         hparams["structure_params"] = ["hidden_dim","layer_dim","out_dim","l2_drop_rate"]
+        hparams["dataset_params"] = ["batch_size"]
+        hparams["dataset"] = model_config.get("DATASET")
         hparams["n_epoch"] = model_config.getint("N_EPOCH")
         hparams["batch_size"] = model_config.getint("BATCHSIZE")
         hparams["hidden_dim"] = model_config.getint("HIDDEN_DIM")
@@ -22,12 +24,15 @@ class parameterParser:
     @staticmethod
     def slstm(model_config):
         hparams = {}
-        hparams["structure_params"] = ["hidden_dim","layer_dim","out_dim","l2_drop_rate"]
+        hparams["structure_params"] = ["hidden_dim","output_dim","num_layers","window_size"]
+        hparams["dataset_params"] = ["batch_size","window_size"]
+        hparams["dataset"] = model_config.get("DATASET")
         hparams["n_epoch"] = model_config.getint("N_EPOCH")
         hparams["batch_size"] = model_config.getint("BATCHSIZE")
         hparams["hidden_dim"] = model_config.getint("HIDDEN_DIM")
-        hparams["layer_dim"] = model_config.getint("LAYER_DIM")
-        hparams["out_dim"] = model_config.getint("OUT_DIM")
+        hparams["num_layers"] = model_config.getint("NUM_LAYERS")
+        hparams["output_dim"] = model_config.getint("OUTPUT_DIM")
+        hparams["window_size"] = model_config.getint("WINDOW_SIZE")
         hparams["l2_drop_rate"] = model_config.getfloat("L2_DROP_RATE")
         hparams["weight_decay"] = model_config.getfloat("WEIGHT_DECAY")
         hparams["lr"] = model_config.getfloat("LR")
@@ -75,14 +80,14 @@ class SimpleDnn(nn.Module):
 
 class SimpleLSTM(nn.Module):
 
-    def __init__(self, input_dim, output_dim, hidden_dim, num_layers):
+    def __init__(self, input_dim, output_dim, hidden_dim, num_layers,window_size):
         super(SimpleLSTM, self).__init__()
         
         self.output_dim = output_dim
         self.num_layers = num_layers
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
-        self.seq_length = seq_length
+        self.window_size = window_size
         
         self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim,
                             num_layers=num_layers, batch_first=True)

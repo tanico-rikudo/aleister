@@ -88,7 +88,7 @@ class LearningEvaluator(BaseProcess):
         }
         self.model  =  models.get(model_name.lower())(**model_params)
         self.model_name = model_name
-        self._logger.info('[DONE]Load Model Instance.')
+        self._logger.info('[DONE] Load Model Instance.  Stucture params={0}'.format(model_params))
         
     def load_model_hparameters(self, model_name):
         hparams = {

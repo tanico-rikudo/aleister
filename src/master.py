@@ -41,18 +41,28 @@ def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_
 
     # prepro
     ans_col = fp.model_config.get("ANS_COL")
-    X_train, X_val, X_test, y_train, y_val, y_test = \
-        fp.convert_dataset(Xy, ans_col, "period", 
-                           train_start=train_start, train_end=train_end, 
-                           valid_start=valid_start, valid_end=valid_end, 
-                           test_start=test_start, test_end=test_end)
-    # X_train, X_val, X_test, y_train, y_val, y_test = fp.convert_dataset(Xy, ans_col,split_rule="period", test_ratio=0.4, valid_ratio=0.5)
+    X, y = fp.feature_label_split(df=Xy, target_col=ans_col)
+    y = fp.onehot_y(y)
+    
+    # split period
+    train_datas, val_datas , test_datas = \
+            fp.train_val_test_period_split([X,y], train_start, train_end, valid_start, valid_end, test_start, test_end)
+         
+    # assign
+    X_trains = [ train_data.values for  train_data in train_datas[:-1] ]
+    X_vals = [ val_data.values for  val_data in val_datas[:-1] ]
+    X_tests = [ test_data.values for  tests_data in test_datas[:-1] ]
+    
+    y_train =train_datas[-1].value
+    y_val =val_datas[-1].values
+    y_test =test_datas[-1].values
+
     scaler  = fp.get_scaler("minmax")
-    X_train,x_scaler = fp.scalingX(X_train)
-    X_val,_ = fp.scalingX(X_val,x_scaler)
-    X_test,_ = fp.scalingX(X_test,x_scaler)
+    X_trains[0],x_scaler = fp.scalingX(X_trains[0])
+    X_vals[0],_ = fp.scalingX(X_vals[0],x_scaler)
+    X_tests[0],_ = fp.scalingX(X_tests[0],x_scaler)
     fp.save_numpy_datas(**{
-        "X_train": X_train, "X_val":X_val, "X_test": X_test,
+        "X_train": X_trains[0], "X_val":X_vals[0], "X_test": X_tests[0],
         "y_train":y_train, "y_val":y_val, "y_test":y_test,
         "x_scaler":x_scaler
     })
@@ -60,16 +70,19 @@ def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_
 def train(fp,le):  
     obj_keys = ["X_train", "X_val", "y_train", "y_val"]
     X_train, X_val,  y_train, y_val= fp.load_numpy_datas(obj_keys)
-
+    X_trains = [X_train]
+    X_vals = [X_val]
+    
      # train set up
-    input_dim = X_train.shape[1]
-    model_params = { _k for _k, _v in le.hparams["structure_params"]}
+    input_dim = X_trains[0].shape[1]
+    model_params = { _k :le.hparams[_k] for _k  in le.hparams["structure_params"]}
     model_params['input_dim'] = input_dim
     
     le.get_model_instance(le.model_name,model_params)
     
-    batch_size = le.hparams["batch_size"]
-    train_loader, val_loader, _, _ = fp.get_dataloader(X_train, y_train, X_val,y_val, None, None, batch_size)
+    fp.get_dataset_fn(le.hparams["dataset"])
+    dataset_params = { _k: le.hparams[_k] for  _k in le.hparams["dataset_params"]}
+    train_loader, val_loader, _, _ = fp.get_dataloader(le.hparams["dataset"], X_trains, y_train, X_vals,y_val, None, None, **dataset_params)
 
     lossfn_params = {}
     le.get_loss_fn(le.hparams["optimizer"],{})
@@ -101,32 +114,17 @@ def test_out_of_data(fp,le):
     if X_test is None:
         print("No test data.")
         return
+    X_tests = [X_test]
     
     input_dim = X_test.shape[1]
-    # model_params = {
-    #     'input_dim': input_dim,
-    #     'hidden_dim' : le.hparams["hidden_dim"],
-    #     'layer_dim' : le.hparams["layer_dim"],
-    #     'output_dim' : le.hparams["out_dim"],
-    #     'l2_drop_rate':le.hparams["l2_drop_rate"]
-    # }
-    # le.get_model_instance(le.model_name,model_params)
     batch_size = le.hparams["batch_size"]
     
-    _, _ ,test_loader, test_loader_one = fp.get_dataloader( X_test=X_test, y_test=y_test, batch_size=batch_size)
+    fp.get_dataset_fn(le.hparams["dataset"])
+    dataset_params = { _k: le.hparams[_k] for  _k in le.hparams["dataset_params"]}
+    _, _ ,test_loader, test_loader_one = fp.get_dataloaders(le.hparams["dataset"], X_train=None, y_train=None, X_val=None,y_val=None,  X_test=X_tests, y_test=y_test, **dataset_params)
     
     lossfn_params = {}
     le.get_loss_fn(le.hparams["optimizer"],{})
-
-    # optim_params = {
-    #     # 'params': le.model.parameters(),
-    #     'weight_decay': le.hparams["weight_decay"],
-    #     'lr':le.hparams["lr"]
-    #     }
-    
-    # le.get_optimizer(le.hparams["loss_fn"],optim_params)
-    
-
     predictions, values = le.evaluate(test_loader_one)
 
     
