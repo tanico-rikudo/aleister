@@ -1,19 +1,22 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
+from torchsummary import summary
 
 class parameterParser:
     
     @staticmethod
     def sdnn(model_config):
         hparams = {}
-        hparams["structure_params"] = ["hidden_dim","layer_dim","out_dim","l2_drop_rate"]
+        hparams["structure_params"] = ["hidden_dim","layer_dim","output_dim","l2_drop_rate"]
         hparams["dataset_params"] = ["batch_size"]
         hparams["dataset"] = model_config.get("DATASET")
         hparams["n_epoch"] = model_config.getint("N_EPOCH")
         hparams["batch_size"] = model_config.getint("BATCHSIZE")
         hparams["hidden_dim"] = model_config.getint("HIDDEN_DIM")
         hparams["layer_dim"] = model_config.getint("LAYER_DIM")
-        hparams["out_dim"] = model_config.getint("OUT_DIM")
+        hparams["output_dim"] = model_config.getint("OUTPUT_DIM")
         hparams["l2_drop_rate"] = model_config.getfloat("L2_DROP_RATE")
         hparams["weight_decay"] = model_config.getfloat("WEIGHT_DECAY")
         hparams["lr"] = model_config.getfloat("LR")
@@ -56,8 +59,7 @@ class SimpleDnn(nn.Module):
         self.batchnorm2 = nn.BatchNorm1d(layer_dim)
         # self.batchnorm3 = nn.BatchNorm1d(64)
         
-    def forward(self, xs):
-        x = xs[0]
+    def forward(self, x):
         x = self.layer_1(x)
         # x = self.batchnorm1(x)
         # x = self.relu(x)
@@ -80,7 +82,7 @@ class SimpleDnn(nn.Module):
 
 class SimpleLSTM(nn.Module):
 
-    def __init__(self, input_dim, output_dim, hidden_dim, num_layers,window_size):
+    def __init__(self, input_dim, output_dim, hidden_dim, num_layers, window_size):
         super(SimpleLSTM, self).__init__()
         
         self.output_dim = output_dim
@@ -89,24 +91,25 @@ class SimpleLSTM(nn.Module):
         self.hidden_dim = hidden_dim
         self.window_size = window_size
         
+        # batch * window * dim
         self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim,
                             num_layers=num_layers, batch_first=True)
         
+        
         self.fc = nn.Linear(hidden_dim, output_dim)
 
-    def forward(self, xs):
-        x = xs[0]
-        h_0 = Variable(torch.zeros(
-            self.num_layers, x.size(0), self.hidden_dim))
-        
-        c_0 = Variable(torch.zeros(
-            self.num_layers, x.size(0), self.hidden_dim))
+    def forward(self, x):
+        batch_size = x.size(0)
+        x = x.view(batch_size, self.window_size, -1) # batch * window * dim
+        h_0 = Variable(torch.zeros(self.num_layers, batch_size, self.hidden_dim),requires_grad = True)
+        c_0 = Variable(torch.zeros(self.num_layers, batch_size, self.hidden_dim),requires_grad = True)
         
         # Propagate input through LSTM
-        ula, (h_out, _) = self.lstm(x, (h_0, c_0))
+        lstm_out, (h_out, c_out) = self.lstm(x, (h_0, c_0))
         
-        h_out = h_out.view(-1, self.hidden_dim)
+        h_out = h_out.view(self.num_layers,batch_size,self.hidden_dim)[-1] #num_layer * batch * dim
         
         out = self.fc(h_out)
+        out = F.softmax(out,dim=1)
         
         return out

@@ -46,14 +46,14 @@ def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_
     
     # split period
     train_datas, val_datas , test_datas = \
-            fp.train_val_test_period_split([X,y], train_start, train_end, valid_start, valid_end, test_start, test_end)
+            fp.train_val_test_period_split((X,y), train_start, train_end, valid_start, valid_end, test_start, test_end)
          
     # assign
     X_trains = [ train_data.values for  train_data in train_datas[:-1] ]
     X_vals = [ val_data.values for  val_data in val_datas[:-1] ]
-    X_tests = [ test_data.values for  tests_data in test_datas[:-1] ]
+    X_tests = [ test_data.values for  test_data in test_datas[:-1] ]
     
-    y_train =train_datas[-1].value
+    y_train =train_datas[-1].values
     y_val =val_datas[-1].values
     y_test =test_datas[-1].values
 
@@ -121,8 +121,8 @@ def test_out_of_data(fp,le):
     
     fp.get_dataset_fn(le.hparams["dataset"])
     dataset_params = { _k: le.hparams[_k] for  _k in le.hparams["dataset_params"]}
-    _, _ ,test_loader, test_loader_one = fp.get_dataloaders(le.hparams["dataset"], X_train=None, y_train=None, X_val=None,y_val=None,  X_test=X_tests, y_test=y_test, **dataset_params)
-    
+    _, _ ,test_loader, test_loader_one = fp.get_dataloader(le.hparams["dataset"],X_trains=None, y_train=None, X_vals=None,y_val=None,  X_tests=X_tests, y_test=y_test, **dataset_params)
+    # print(test_loader_one)
     lossfn_params = {}
     le.get_loss_fn(le.hparams["optimizer"],{})
     predictions, values = le.evaluate(test_loader_one)

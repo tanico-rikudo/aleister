@@ -106,28 +106,28 @@ class LearningEvaluator(BaseProcess):
         return y_pred
         
 
-    def train_step(self, xs, y):
-        xs = xs.to(self.device)
-        y = y.to(self.device)
-        
+    def train_step(self, xs, ys):
+        xs = [x.to(self.device) for x in xs]
+        # xs = [xs[0].to(self.device),xs[0].to(self.device) ]
+        ys = [y.to(self.device) for y in ys]
         self.model.train()
-        yhat = self.model(xs)
-        loss = self.loss_fn(y, yhat)
+        yhat = self.model(*xs)
+        loss = self.loss_fn(ys[0], yhat)
         loss.backward()
         self.optimizer.step()
         return loss.item()
     
-    def eval_step(self, xs, y):
-        xs = xs.to(self.device)
-        y = y.to(self.device)
-        
+    
+    def eval_step(self, xs, ys):
+        xs = [x.to(self.device) for x in xs]
+        # xs = [xs[0].to(self.device),xs[0].to(self.device) ]
+        ys = [y.to(self.device) for y in ys]
         self.model.eval()
-        yhat = self.model(x_val)
+        yhat = self.model(*xs)
+        loss = self.loss_fn(ys[0], yhat).item()
         prediction = yhat.to(self.device).detach().numpy()[0]
-        truth =  y.to(self.device).detach().numpy()[0]
-        
-        loss = self.loss_fn(truth, prediction).item()
-        
+        # print(prediction)
+        truth =  ys[0].to(self.device).detach().numpy()[0]
         return prediction, truth, loss
 
     def train(self, train_loader, val_loader, batch_size=64, n_epochs=10, n_features=1): 
@@ -168,10 +168,10 @@ class LearningEvaluator(BaseProcess):
         # start
         for epoch in range(1, n_epochs + 1):
             batch_losses = []
-            for batch_data in train_loader:
-                x_batchs, y_batch = batch_data[:-1],batch_data[-1]
+            self.train_loader  = train_loader
+            for x_batchs, y_batchs in train_loader:
                 self.optimizer.zero_grad()
-                loss = self.train_step(x_batchs, y_batch)
+                loss=  self.train_step(x_batchs, y_batchs)
                 batch_losses.append(loss)
             training_loss = np.mean(batch_losses)
             self.train_losses.append(training_loss)
@@ -181,9 +181,8 @@ class LearningEvaluator(BaseProcess):
                 batch_val_losses = []
                 predictions = []
                 truths  = []
-                for batch_data in val_loader:
-                    x_vals, y_val =  batch_data[:-1],batch_data[-1]
-                    prediction, truth, val_loss =  self.train_step(x_vals, y_val)
+                for x_vals, y_val  in val_loader:
+                    prediction, truth, val_loss =  self.eval_step(x_vals, y_val)
                     predictions.append(prediction)
                     truths.append(truth)
                     batch_val_losses.append(val_loss)
@@ -199,7 +198,8 @@ class LearningEvaluator(BaseProcess):
                 
                 self.mlwriter.log_metric('valid_acc', acc, epoch)
                 self.mlwriter.log_metric('valid_loss', validation_loss, epoch)
-            
+                # print(self.prediction["val"])
+                # print(self.predictions_out["val"])
 
             if (epoch <= 10) | (epoch % 50 == 0):
                 self._logger.info(
@@ -210,8 +210,8 @@ class LearningEvaluator(BaseProcess):
         
         self.save_numpy_obj(predictions, "val_preds.csv")
         self.save_numpy_obj(truths, "val_truth.csv")
-        self.save_numpy_obj(predictions_out, "val_preds_out.csv")
-        self.save_numpy_obj(truths_out, "val_truth_out.csv")
+        self.save_numpy_obj(predictions_out, "val_preds_out.csv", type='int')
+        self.save_numpy_obj(truths_out, "val_truth_out.csv", type='int')
 
         # self.save_model()
         self.save_mlflow_model()
@@ -224,9 +224,9 @@ class LearningEvaluator(BaseProcess):
         with torch.no_grad():
             predictions = []
             truths  = []
-            for batch_data in test_loader:
-                x_tests, y_test =  batch_data[:-1],batch_data[-1]
-                prediction, truth, val_loss =  self.train_step(x_tests, y_test)
+            self.test_loader = test_loader
+            for x_tests, y_test  in test_loader:
+                prediction, truth, val_loss =  self.eval_step(x_tests, y_test)
                 predictions.append(prediction)
                 truths.append(truth)
                 
@@ -242,18 +242,22 @@ class LearningEvaluator(BaseProcess):
             self.mlwriter.log_metric('test_acc', acc)
             self.save_numpy_obj(predictions, "eval_preds.csv")
             self.save_numpy_obj(truths, "eval_truth.csv")
-            self.save_numpy_obj(predictions_out, "eval_preds_out.csv")
-            self.save_numpy_obj(truths_out, "eval_truth_out.csv")
+            self.save_numpy_obj(predictions_out, "eval_preds_out.csv", type='int')
+            self.save_numpy_obj(truths_out, "eval_truth_out.csv", type='int')
 
                 
         self._logger.info("[END] Evaluate. ID={0}".format(self.id))
         return predictions, truths
     
     
-    def save_numpy_obj(self, obj, filename):
+    def save_numpy_obj(self, obj, filename, type='float'):
+        if type in 'int':
+            fmt='%d'
+        if type in 'float':
+            fmt='%f'
         with tempfile.TemporaryDirectory() as tdname:
             path = os.path.join(tdname, filename)
-            np.savetxt(path, obj, delimiter=',', fmt='%d')
+            np.savetxt(path, obj, delimiter=',', fmt=fmt)
             # self._logger.info(f"[DONE] Save obj to tmp: {path}")
             save_path = self.mlwriter.log_artifact(path)
             self._logger.info("[DONE] Save obj. Filename={0}".format(filename))
