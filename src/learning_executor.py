@@ -26,9 +26,10 @@ from model_modules import *
 import  mlflow
 
 class LearningEvaluator(BaseProcess):
-    def __init__(self, _id, mlflow_tags):
+    def __init__(self, _id, model_name, mlflow_tags):
         super().__init__(_id)
         self.id = _id
+        self.model_name = model_name
         self.model = None
         self.device = "cpu"
         
@@ -87,17 +88,15 @@ class LearningEvaluator(BaseProcess):
             "slstm": SimpleLSTM
         }
         self.model  =  models.get(model_name.lower())(**model_params)
-        self.model_name = model_name
         self._logger.info('[DONE] Load Model Instance.  Stucture params={0}'.format(model_params))
         
-    def load_model_hparameters(self, model_name):
+    def load_model_hparameters(self, model_name, source='ini'):
         hparams = {
             "sdnn": parameterParser.sdnn,
             "slstm": parameterParser.slstm
         }
-        self.model_name = model_name
-        self.hparams =  hparams.get(model_name.lower())(self.model_config)
-        self._logger.info('[DONE]Load hyper params.')
+        self.hparams =  hparams.get(model_name.lower())(self.model_config, source)
+        self._logger.info(f'[DONE]Load hyper params. Name={self.model_name}, Source={source}')
         
 
     def convert_model_value(self,y):

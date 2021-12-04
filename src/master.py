@@ -2,6 +2,7 @@ import os,sys
 import logging
 import logging.config
 import argparse
+from sklearn.model_selection import ParameterGrid
 from datetime import datetime as dt
 os.environ['BASE_DIR'] =  '/Users/macico/Dropbox/btc'
 os.environ['KULOKO_DIR'] = os.path.join(os.environ['BASE_DIR'], "kuloko")
@@ -28,7 +29,10 @@ from util.config import ConfigManager
 
 cm = ConfigManager(os.environ['KULOKO_INI'])
 logger = cm.load_log_config(os.path.join(LOGDIR,'logging.log'),log_name="ALEISTER")
-        
+
+global fp
+global le
+
 def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_start, test_end):
     # gen data 
     dg =  DataGen()
@@ -67,12 +71,8 @@ def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_
         "x_scaler":x_scaler
     })
     
-def train(fp,le):  
-    obj_keys = ["X_train", "X_val", "y_train", "y_val"]
-    X_train, X_val,  y_train, y_val= fp.load_numpy_datas(obj_keys)
-    X_trains = [X_train]
-    X_vals = [X_val]
-    
+def train_worker(fp, le, X_trains, X_vals,  y_train, y_val ):
+        
      # train set up
     input_dim = X_trains[0].shape[1]
     model_params = { _k :le.hparams[_k] for _k  in le.hparams["structure_params"]}
@@ -108,6 +108,31 @@ def train(fp,le):
     test_out_of_data(fp, le)
     
     
+def train(fp,le):  
+    obj_keys = ["X_train", "X_val", "y_train", "y_val"]
+    X_train, X_val,  y_train, y_val= fp.load_numpy_datas(obj_keys)
+    X_trains = [X_train]
+    X_vals = [X_val]
+    
+    le.load_model_config(source="ini", path=None, model_name=le.model_name)
+    le.load_model_hparameters(le.model_name)
+        
+    train_worker(fp, le,X_trains, X_vals,  y_train, y_val)
+
+def gtrain(fp,le):  
+    obj_keys = ["X_train", "X_val", "y_train", "y_val"]
+    X_train, X_val,  y_train, y_val= fp.load_numpy_datas(obj_keys)
+    X_trains = [X_train]
+    X_vals = [X_val]
+    
+    model_config = le.load_model_config(source="yaml", path=None, model_name=le.model_name, replace=False)
+    param_grid = ParameterGrid(model_config)
+    for g in param_grid:
+        g=  { le.model_name: g}
+        le.load_model_config(source="dict", dict_obj=g, model_name=le.model_name, replace =True)
+        le.load_model_hparameters(le.model_name)
+        train_worker(fp, le,X_trains, X_vals,  y_train, y_val)
+            
 def test_out_of_data(fp,le):
     obj_keys = ["X_test", "y_test"]
     X_test, y_test = fp.load_numpy_datas(obj_keys)
@@ -160,7 +185,7 @@ def make_parser():
         '-mode','--execute_mode',
         type=str, 
         required=True,
-        choices=[ 'prepro','train','valid'],
+        choices=[ 'prepro','train','gtrain'],
         help='Execution mode. ')
     
     parser.add_argument(
@@ -219,6 +244,7 @@ def make_parser():
         type=int, 
         help='train end date ')
     return parser
+
     
 def main(args):
     parser = make_parser()
@@ -240,38 +266,27 @@ def main(args):
     # sym
     sym = arg_dict["symbol"] 
 
-    # load all parent modules
+    # load conofigs into each module
     fp = featurePreprocess(_id)
     fp.load_general_config(source="ini", path=None,mode=config_mode)
-    fp.load_model_config(source="ini", path=None,model_name=model_name)
+    # fp.load_model_config(source="ini", path=None,model_name=model_name)
 
-        
+    mlflow_tags = {
+        "user":arg_dict["user"],
+        "source":arg_dict["source"],
+        "run_name": f"TRAIN_{dt.now().strftime('%y%m%d%H%M%s')}"
+    }
+    le = LearningEvaluator(_id, model_name, mlflow_tags)
+    le.get_device()
+    le.load_general_config(source="ini", path=None,mode=config_mode)
+
     if arg_dict["execute_mode"] == "prepro":
         preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_start, test_end)
     elif arg_dict["execute_mode"] == "train":
-        mlflow_tags = {
-            "user":arg_dict["user"],
-            "source":arg_dict["source"],
-            "run_name": f"TRAIN_{dt.now().strftime('%y%m%d%H%M%s')}"
-        }
-        le = LearningEvaluator(_id, mlflow_tags)
-        le.get_device()
-        le.load_general_config(source="ini", path=None,mode=config_mode)
-        le.load_model_config(source="ini", path=None, model_name=model_name)
-        le.load_model_hparameters(model_name)
         train(fp, le)
-    # elif arg_dict["execute_mode"] == "valid":
-    #     mlflow_tags = {
-    #         "user":arg_dict["user"],
-    #         "source":arg_dict["source"],
-    #         "run_name": f"VALID_{dt.now().strftime('%y%m%d%H%M%s')}"
-    #     }
-    #     le = LearningEvaluator(_id, mlflow_tags)
-    #     le.get_device()
-    #     le.load_general_config(source="ini", path=None,mode=config_mode)
-    #     le.load_model_config(source="ini", path=None, model_name=model_name)
-    #     le.load_model_hparameters(model_name)
-    #     valid(fp, le)
+    elif arg_dict["execute_mode"] == "gtrain":
+        gtrain(fp, le)
+
     else:
         pass
 if __name__ == "__main__":
