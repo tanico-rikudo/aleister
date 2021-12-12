@@ -1,17 +1,34 @@
 import hist_data
 import pandas as pd
 import  numpy as np
+import pika
+import uuid
+
+from multiprocessing import Process
 VOLATILITY_VAR_DAYS = 30
 VOLATILITY_DAYS = 1 
 VOID_ALLOWANCE_RATIO = 1
 class DataGen:
-    def __init__(self):
+    def __init__(self, logger):
         self.hd = None
+        self.mqhost = 'localhost'
+        self.mqname = 'aleister'
+        self.logger = logger
         
-    def get_load_data_proxy(self):
+    def init_mqclient(self):
+        self.mq_rpc_client = RpcClient(self.mqhost,self.mqname, self.logger)
+        
+    def get_hist_data_proxy(self):
         hd = hist_data.histData()
         self.hd = hd
         
+    def get_realdata(self):
+        try:
+            realtime_data = self.mq_rpc_client.call()
+        except Exception as e:
+            realtime_data = None
+    
+    
     def get_trades(self,sym, sd, ed):
         trades=self.hd.load(sym,'trades', sd ,ed)
         trades.timestamp =  pd.to_datetime(trades.timestamp)
@@ -70,3 +87,59 @@ class DataGen:
         Xy = mtrades[ls_last_relative_cols+["buy_size_ratio","sell_size_ratio"]+["movingBinary"]]
         Xy.dropna(subset=["movingBinary"], inplace=True)
         return Xy
+    
+
+import pika
+import uuid
+class RpcClient(object):
+
+    def __init__(self, host, routing_key, logger):
+        self.host = host
+        self.routing_key = routing_key
+        
+        self.connection = pika.BlockingConnection(
+            pika.ConnectionParameters(host=self.host))
+
+        self.channel = self.connection.channel()
+
+        result = self.channel.queue_declare(queue='', exclusive=True)
+        self.callback_queue = result.method.queue
+
+        self.channel.basic_consume(
+            queue=self.callback_queue,
+            on_message_callback=self.on_response,
+            auto_ack=True)
+        
+        self.logger.info(f"[STOP] RPC request client initilized. Host={host}, Routing={routing_key")
+
+    def on_response(self, ch, method, props, body):
+        if self.corr_id == props.correlation_id:
+            self.response = body
+
+    def call(self, commannd_msg=None):
+        commannd_msg = "" if commannd_msg is None else commannd_msg
+        self.response = None
+        self.corr_id = str(uuid.uuid4())
+        self.logger(f"[REQUEST] Call RPC. ID={self.corr_id}, Command={commannd_msg}")
+        self.channel.basic_publish(
+            exchange='',
+            routing_key=self.routing_key,
+            properties=pika.BasicProperties(
+                reply_to=self.callback_queue,
+                correlation_id=self.corr_id,
+            ),
+            body=str(commannd_msg))
+        while self.response is None:
+            self.connection.process_data_events()
+        return self.response
+    
+    
+    def end_call(self):
+        self.call("END")
+
+
+client = RpcClient()
+
+
+        
+    

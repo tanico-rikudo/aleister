@@ -36,7 +36,7 @@ global le
 def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_start, test_end):
     # gen data 
     dg =  DataGen()
-    dg.get_load_data_proxy()
+    dg.get_hist_data_proxy()
     fetch_start = min([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
     fetch_end =  max([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
     trades = dg.get_trades(sym=sym, sd=fetch_start, ed=fetch_end)
