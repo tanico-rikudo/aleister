@@ -35,7 +35,7 @@ global le
 
 def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_start, test_end):
     # gen data 
-    dg =  DataGen()
+    dg =  DataGen(fp.general_config,fp._logger)
     dg.get_hist_data_proxy()
     fetch_start = min([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
     fetch_end =  max([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
