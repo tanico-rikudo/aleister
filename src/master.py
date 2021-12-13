@@ -34,155 +34,181 @@ global fp
 global le
 
 # todo: CLass.  it waste to connect   every  time....
-def realtime_preprocessing(general_config,logger, scaler):
-    # get data vim mq
-    dg =  DataGen(general_config, logger)
-    dg.init_mqclient()
-    datas = dg.fetch_realdata()
-
-    fp._logger.info("[DONE] Get prepro raw data")
-    
-    #prepro
-    X = dg.get_Xy(trades)
-    X, _ = fp.feature_label_split(df=X, target_col=ans_col)
-    X,_ = fp.scalingX( X,scaler)
-    
-    return X
-    
-def predict(fp, le, sym ):
-    fp.load_numpy_datas(["x_scaler"])
-    X = realtime_preprocessing(p.general_config,fp._logger, scaler)
-    
-    # todo: mode conider
-    le.load_mlflow_model()
-    prediction = le.prediction(x)
-    return prediction
-
-def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_start, test_end):
-    # gen data 
-    dg =  DataGen(fp.general_config,fp._logger)
-    dg.get_hist_data_proxy()
-    fetch_start = min([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
-    fetch_end =  max([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
-    trades = dg.get_hist_trades(sym=sym, sd=fetch_start, ed=fetch_end)
-    orderbooks = dg.get_hist_orderbooks(sym=sym, sd=fetch_start, ed=fetch_end)
-    fp._logger.info("[DONE] Get prepro raw data. {0}~{1}".format(fetch_start,fetch_end))
-    Xy = dg.get_Xy(trades)
-
-    # prepro
-    ans_col = fp.model_config.get("ANS_COL")
-    X, y = fp.feature_label_split(df=Xy, target_col=ans_col)
-    y = fp.onehot_y(y)
-    
-    # split period
-    train_datas, val_datas , test_datas = \
-            fp.train_val_test_period_split((X,y), train_start, train_end, valid_start, valid_end, test_start, test_end)
-         
-    # assign
-    X_trains = [ train_data.values for  train_data in train_datas[:-1] ]
-    X_vals = [ val_data.values for  val_data in val_datas[:-1] ]
-    X_tests = [ test_data.values for  test_data in test_datas[:-1] ]
-    
-    y_train =train_datas[-1].values
-    y_val =val_datas[-1].values
-    y_test =test_datas[-1].values
-
-    # scaling
-    #todo: exxpannd all  axis.  not  need -1
-    scaler  = fp.get_scaler("minmax")
-    X_trains[0],x_scaler = fp.scalingX(X_trains[0])
-    X_vals[0],_ = fp.scalingX(X_vals[0],x_scaler)
-    X_tests[0],_ = fp.scalingX(X_tests[0],x_scaler)
-    fp.save_numpy_datas(**{
-        "X_train": X_trains[0], "X_val":X_vals[0], "X_test": X_tests[0],
-        "y_train":y_train, "y_val":y_val, "y_test":y_test,
-        "x_scaler":x_scaler
-    })
-    
-def train_worker(fp, le, X_trains, X_vals,  y_train, y_val ):
+class OperateMaster(Object):
+    def __init__(self):
+        self.dg = None
+        self.fp = None
+        self.le = None
+        self._id =None
+        self.config_mode =  None
         
-     # train set up
-    input_dim = X_trains[0].shape[1]
-    model_params = { _k :le.hparams[_k] for _k  in le.hparams["structure_params"]}
-    model_params['input_dim'] = input_dim
-    
-    le.get_model_instance(le.model_name,model_params)
-    
-    fp.get_dataset_fn(le.hparams["dataset"])
-    dataset_params = { _k: le.hparams[_k] for  _k in le.hparams["dataset_params"]}
-    train_loader, val_loader, _, _ = fp.get_dataloader(le.hparams["dataset"], X_trains, y_train, X_vals,y_val, None, None, **dataset_params)
-
-    lossfn_params = {}
-    le.get_loss_fn(le.hparams["optimizer"],{})
-
-    optim_params = {
-        'params': le.model.parameters(),
-        'weight_decay': le.hparams["weight_decay"],
-        'lr':le.hparams["lr"]
-        }
-    
-    le.get_optimizer(le.hparams["loss_fn"],optim_params)
-
-    # train
-    le.train(train_loader, val_loader, 
-             batch_size=le.hparams["batch_size"], n_epochs=le.hparams["n_epoch"],
-             n_features=1)
-    le.plot_losses()
-    
-    # decline end
-    le.terminated()
-    
-    # validation if data exist
-    test_out_of_data(fp, le)
-    
-    
-def train(fp,le):  
-    obj_keys = ["X_train", "X_val", "y_train", "y_val"]
-    X_train, X_val,  y_train, y_val= fp.load_numpy_datas(obj_keys)
-    X_trains = [X_train]
-    X_vals = [X_val]
-    
-    le.load_model_config(source="ini", path=None, model_name=le.model_name)
-    le.load_model_hparameters(le.model_name)
+    def load_meta(self, _id, config_mode):
+        self.id = _id
+        self.config_mode = config_mode
         
-    train_worker(fp, le,X_trains, X_vals,  y_train, y_val)
+    def init_prepro(self):
+        self.fp = featurePreprocess(self.id)
+        self.fp.load_general_config(source="ini", path=None,mode=self.config_mode)
 
-def gtrain(fp,le):  
-    obj_keys = ["X_train", "X_val", "y_train", "y_val"]
-    X_train, X_val,  y_train, y_val= fp.load_numpy_datas(obj_keys)
-    X_trains = [X_train]
-    X_vals = [X_val]
-    
-    model_config = le.load_model_config(source="yaml", path=None, model_name=le.model_name, replace=False)
-    param_grid = ParameterGrid(model_config)
-    for g in param_grid:
-        g=  { le.model_name: g}
-        le.load_model_config(source="dict", dict_obj=g, model_name=le.model_name, replace =True)
-        le.load_model_hparameters(le.model_name)
-        train_worker(fp, le,X_trains, X_vals,  y_train, y_val)
+        
+    def init_learning(self,model_name, mlflow_tags):
+        self.le = LearningEvaluator(self.id, model_name, mlflow_tags)
+        self.le.get_device()
+        self.le.load_general_config(source="ini", path=None,mode=self.config_mode)
+        
+        
+    def init_dataGen(self, remote=False):
+        self.dg =  DataGen(self.fp.general_config, self.fp._logger)
+        if remote:
+            self.dg.init_mqclient()
             
-def test_out_of_data(fp,le):
-    obj_keys = ["X_test", "y_test"]
-    X_test, y_test = fp.load_numpy_datas(obj_keys)
-    if X_test is None:
-        print("No test data.")
-        return
-    X_tests = [X_test]
-    
-    input_dim = X_test.shape[1]
-    batch_size = le.hparams["batch_size"]
-    
-    fp.get_dataset_fn(le.hparams["dataset"])
-    dataset_params = { _k: le.hparams[_k] for  _k in le.hparams["dataset_params"]}
-    _, _ ,test_loader, test_loader_one = fp.get_dataloader(le.hparams["dataset"],X_trains=None, y_train=None, X_vals=None,y_val=None,  X_tests=X_tests, y_test=y_test, **dataset_params)
-    # print(test_loader_one)
-    lossfn_params = {}
-    le.get_loss_fn(le.hparams["optimizer"],{})
-    predictions, values = le.evaluate(test_loader_one)
+            
+    def realtime_preprocessing(general_config,logger, scaler):
+        # get data vim mq
+        datas = dg.fetch_realdata()
 
-    
-    # decline end
-    le.terminated()
+        self.fp._logger.info("[DONE] Get prepro raw data")
+        
+        #prepro
+        X = dg.get_Xy(trades)
+        X, _ = self.fp.feature_label_split(df=X, target_col=ans_col)
+        X,_ = self.fp.scalingX( X,scaself.ler)
+        
+        return X
+        
+    def predict(self, sym ):
+        self.fp.load_numpy_datas(["x_scaself.ler"])
+        X = realtime_preprocessing(fp.general_config,self.fp._logger, scaler)
+        
+        # todo: mode conider
+        self.le.load_mlflow_model()
+        prediction = self.le.prediction(x)
+        return prediction
+
+    def preprocessing(self, sym, train_start, train_end, valid_start, valid_end, test_start, test_end):
+        # gen data 
+        dg.get_hist_data_proxy()
+        fetch_start = min([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
+        fetch_end =  max([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
+        trades = dg.get_hist_trades(sym=sym, sd=fetch_start, ed=fetch_end)
+        orderbooks = dg.get_hist_orderbooks(sym=sym, sd=fetch_start, ed=fetch_end)
+        self.fp._logger.info("[DONE] Get prepro raw data. {0}~{1}".format(fetch_start,fetch_end))
+        Xy = dg.get_Xy(trades)
+
+        # prepro
+        ans_col = self.fp.model_config.get("ANS_COL")
+        X, y = self.fp.feature_label_split(df=Xy, target_col=ans_col)
+        y = self.fp.onehot_y(y)
+        
+        # split period
+        train_datas, val_datas , test_datas = \
+                self.fp.train_val_test_period_split((X,y), train_start, train_end, valid_start, valid_end, test_start, test_end)
+            
+        # assign
+        X_trains = [ train_data.values for  train_data in train_datas[:-1] ]
+        X_vals = [ val_data.values for  val_data in val_datas[:-1] ]
+        X_tests = [ test_data.values for  test_data in test_datas[:-1] ]
+        
+        y_train =train_datas[-1].values
+        y_val =val_datas[-1].values
+        y_test =test_datas[-1].values
+
+        # scaling
+        #todo: exxpannd all  axis.  not  need -1
+        scaself.ler  = self.fp.get_scaself.ler("minmax")
+        X_trains[0],x_scaself.ler = self.fp.scalingX(X_trains[0])
+        X_vals[0],_ = self.fp.scalingX(X_vals[0],x_scaself.ler)
+        X_tests[0],_ = self.fp.scalingX(X_tests[0],x_scaself.ler)
+        self.fp.save_numpy_datas(**{
+            "X_train": X_trains[0], "X_val":X_vals[0], "X_test": X_tests[0],
+            "y_train":y_train, "y_val":y_val, "y_test":y_test,
+            "x_scaself.ler":x_scaself.ler
+        })
+        
+    def train_worker(self,  X_trains, X_vals,  y_train, y_val ):
+            
+        # train set up
+        input_dim = X_trains[0].shape[1]
+        model_params = { _k :self.le.hparams[_k] for _k  in self.le.hparams["structure_params"]}
+        model_params['input_dim'] = input_dim
+        
+        self.le.get_model_instance(self.le.model_name,model_params)
+        
+        self.fp.get_dataset_fn(self.le.hparams["dataset"])
+        dataset_params = { _k: self.le.hparams[_k] for  _k in self.le.hparams["dataset_params"]}
+        train_loader, val_loader, _, _ = self.fp.get_dataloader(self.le.hparams["dataset"], X_trains, y_train, X_vals,y_val, None, None, **dataset_params)
+
+        lossfn_params = {}
+        self.le.get_loss_fn(self.le.hparams["optimizer"],{})
+
+        optim_params = {
+            'params': self.le.model.parameters(),
+            'weight_decay': self.le.hparams["weight_decay"],
+            'lr':self.le.hparams["lr"]
+            }
+        
+        self.le.get_optimizer(self.le.hparams["loss_fn"],optim_params)
+
+        # train
+        self.le.train(train_loader, val_loader, 
+                batch_size=self.le.hparams["batch_size"], n_epochs=self.le.hparams["n_epoch"],
+                n_features=1)
+        self.le.plot_losses()
+        
+        # decline end
+        self.le.terminated()
+        
+        # validation if data exist
+        test_out_of_data(self.fp, self.le)
+        
+        
+    def train(self):  
+        obj_keys = ["X_train", "X_val", "y_train", "y_val"]
+        X_train, X_val,  y_train, y_val= self.fp.load_numpy_datas(obj_keys)
+        X_trains = [X_train]
+        X_vals = [X_val]
+        
+        self.le.load_model_config(source="ini", path=None, model_name=self.le.model_name)
+        self.le.load_model_hparameters(self.le.model_name)
+            
+        train_worker(self.fp, self.le,X_trains, X_vals,  y_train, y_val)
+
+    def gtrain(self):  
+        obj_keys = ["X_train", "X_val", "y_train", "y_val"]
+        X_train, X_val,  y_train, y_val= self.fp.load_numpy_datas(obj_keys)
+        X_trains = [X_train]
+        X_vals = [X_val]
+        
+        model_config = self.le.load_model_config(source="yaml", path=None, model_name=self.le.model_name, replace=False)
+        param_grid = ParameterGrid(model_config)
+        for g in param_grid:
+            g=  { self.le.model_name: g}
+            self.le.load_model_config(source="dict", dict_obj=g, model_name=self.le.model_name, replace =True)
+            self.le.load_model_hparameters(self.le.model_name)
+            train_worker(self.fp, self.le,X_trains, X_vals,  y_train, y_val)
+                
+    def test_out_of_data(self):
+        obj_keys = ["X_test", "y_test"]
+        X_test, y_test = self.fp.load_numpy_datas(obj_keys)
+        if X_test is None:
+            print("No test data.")
+            return
+        X_tests = [X_test]
+        
+        input_dim = X_test.shape[1]
+        batch_size = self.le.hparams["batch_size"]
+        
+        self.fp.get_dataset_fn(self.le.hparams["dataset"])
+        dataset_params = { _k: self.le.hparams[_k] for  _k in self.le.hparams["dataset_params"]}
+        _, _ ,test_loader, test_loader_one = self.fp.get_dataloader(self.le.hparams["dataset"],X_trains=None, y_train=None, X_vals=None,y_val=None,  X_tests=X_tests, y_test=y_test, **dataset_params)
+        # print(test_loader_one)
+        lossfn_params = {}
+        self.le.get_loss_fn(self.le.hparams["optimizer"],{})
+        predictions, values = self.le.evaluate(test_loader_one)
+
+        
+        # decline end
+        self.le.terminated()
         
 def make_parser():
     parser = argparse.ArgumentParser(
@@ -293,27 +319,32 @@ def main(args):
 
     # sym
     sym = arg_dict["symbol"] 
+    
+    # load meta info
+    om = OperateMaster()
+    om.load_meta(_id, config_mode)
 
     # load conofigs into each module
-    fp = featurePreprocess(_id)
-    fp.load_general_config(source="ini", path=None,mode=config_mode)
-    # fp.load_model_config(source="ini", path=None,model_name=model_name)
-
+    om.init_prepro()
+    
+    
     mlflow_tags = {
         "user":arg_dict["user"],
         "source":arg_dict["source"],
         "run_name": f"TRAIN_{dt.now().strftime('%y%m%d%H%M%s')}"
     }
-    le = LearningEvaluator(_id, model_name, mlflow_tags)
-    le.get_device()
-    le.load_general_config(source="ini", path=None,mode=config_mode)
+    om.init_learning(_id, model_name, mlflow_tags, config_mode)
 
     if arg_dict["execute_mode"] == "prepro":
-        preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_start, test_end)
+        om.init_dataGen()
+        om.preprocessing(sym, train_start, train_end, valid_start, valid_end, test_start, test_end)
     elif arg_dict["execute_mode"] == "train":
-        train(fp, le)
+        om.train()
     elif arg_dict["execute_mode"] == "gtrain":
-        gtrain(fp, le)
+        om.gtrain()
+    elif arg_dict["execute_mode"] == "rpredict":
+        om.init_dataGen(remote=True)
+        om.predict()
 
     else:
         pass
