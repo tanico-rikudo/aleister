@@ -29,9 +29,23 @@ class featurePreprocess(BaseProcess):
         self.dataset_fn_name = dataset_fn_name
         self._logger.info('[DONE] Get dataset fn. Function={0}'.format(self.dataset_fn_name ))
             
-    def feature_label_split(self, df, target_col):
-        y = df.loc[:,[target_col]]
-        X = df.drop(columns=[target_col])
+    def feature_label_split(self, df, target_col=None):
+        """
+        Split  X and y 
+        Args:
+            df ([type]): [description]
+            target_col ([type]): [description]
+
+        Returns:
+            X: pandas.Dataframe
+            y: pandas.Dataframe
+        """
+        if target_col is not None:
+            y = df.loc[:,[target_col]]  
+            X = df.drop(columns=[target_col])
+        else:
+            y = None
+            X = df 
         return X, y
 
     @removals.remove

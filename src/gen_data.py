@@ -22,23 +22,35 @@ class DataGen:
         hd = hist_data.histData()
         self.hd = hd
         
-    def get_realdata(self):
+    def fetch_realdata(self):
         try:
             realtime_data = self.mq_rpc_client.call()
         except Exception as e:
             realtime_data = None
+            self.logger.warning(f"[Failure] Cannot fetch Feed from server.:{e}")
+            
+        #  separate datas
     
-    def get_trades(self,sym, sd, ed):
+    #### Fetch hist data ###
+    def get_hist_trades(self,sym, sd, ed):
         trades=self.hd.load(sym,'trades', sd ,ed)
         trades.timestamp =  pd.to_datetime(trades.timestamp)
         trades.set_index("timestamp",inplace=True)
         return trades
-
+    
+    def get_hist_orderbooks(self,sym, sd, ed):
+        orderbooks=self.hd.load(sym,'orderbooks', sd ,ed, 'local')
+        orderbooks.timestamp =  pd.to_datetime(orderbooks.timestamp)
+        orderbooks.set_index("timestamp",inplace=True)
+        return orderbooks
+        
+    #### Convert data ###
     def get_ohlcv(self,trades):
         ohlcv =  trades.price.resample('T', label='left', closed='left').ohlc()
         return ohlcv
+
     
-    def get_Xy(self,trades):
+    def get_Xy(self,trades, orderbooks,mode='train'):
         """[summary]
 
         Args:
@@ -70,20 +82,28 @@ class DataGen:
         relative_values.fillna(0,inplace=True)
 
         mtrades = pd.concat([mtrades, relative_values],axis=1)
-
-        # Create answer
-        mtrades['open30Mafter']  = mtrades['open'].shift(-30)
-        mtrades.loc[(mtrades['open30Mafter']  - mtrades['open']) > 0, 'movingBinary']  =  1 
-        mtrades.loc[(mtrades['open30Mafter']  - mtrades['open']) == 0, 'movingBinary']  =  0
-        mtrades.loc[(mtrades['open30Mafter']  - mtrades['open']) < 0, 'movingBinary']  =  -1
-
+        
+        #  volatility
         mtrades.loc[:,"volatility"] = mtrades.at_time("00:00")["close"].pct_change().rolling(VOLATILITY_VAR_DAYS).std()* np.sqrt(VOLATILITY_DAYS)
         mtrades.loc[:,"volatility"].fillna(method="ffill",inplace=True)
         mtrades.loc[:, "price_chg_allowamce"] = mtrades.open * mtrades.volatility * 0.01 * VOID_ALLOWANCE_RATIO
 
-        mtrades.loc[np.abs(mtrades['open30Mafter']  - mtrades['open']) <= mtrades.loc[:, "price_chg_allowamce"], "movingBinary"] = 0.0
+        return_cols =  ls_last_relative_cols+["buy_size_ratio","sell_size_ratio"]
         
-        Xy = mtrades[ls_last_relative_cols+["buy_size_ratio","sell_size_ratio"]+["movingBinary"]]
-        Xy.dropna(subset=["movingBinary"], inplace=True)
+        if mode == 'train':
+            # Create answer
+            mtrades['open30Mafter']  = mtrades['open'].shift(-30)
+            mtrades.loc[(mtrades['open30Mafter']  - mtrades['open']) > 0, 'movingBinary']  =  1 
+            mtrades.loc[(mtrades['open30Mafter']  - mtrades['open']) == 0, 'movingBinary']  =  0
+            mtrades.loc[(mtrades['open30Mafter']  - mtrades['open']) < 0, 'movingBinary']  =  -1
+            # adjust neutral
+            mtrades.loc[np.abs(mtrades['open30Mafter']  - mtrades['open']) <= mtrades.loc[:, "price_chg_allowamce"], "movingBinary"] = 0.0
+            mtrades.dropna(subset=["movingBinary"], inplace=True)
+            return_cols =  return_cols+["movingBinary"]
+        
+        # select cols
+        Xy = mtrades[return_cols]
+        
+
         return Xy
     

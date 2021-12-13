@@ -33,13 +33,39 @@ logger = cm.load_log_config(os.path.join(LOGDIR,'logging.log'),log_name="ALEISTE
 global fp
 global le
 
+# todo: CLass.  it waste to connect   every  time....
+def realtime_preprocessing(general_config,logger, scaler):
+    # get data vim mq
+    dg =  DataGen(general_config, logger)
+    dg.init_mqclient()
+    datas = dg.fetch_realdata()
+
+    fp._logger.info("[DONE] Get prepro raw data")
+    
+    #prepro
+    X = dg.get_Xy(trades)
+    X, _ = fp.feature_label_split(df=X, target_col=ans_col)
+    X,_ = fp.scalingX( X,scaler)
+    
+    return X
+    
+def predict(fp, le, sym ):
+    fp.load_numpy_datas(["x_scaler"])
+    X = realtime_preprocessing(p.general_config,fp._logger, scaler)
+    
+    # todo: mode conider
+    le.load_mlflow_model()
+    prediction = le.prediction(x)
+    return prediction
+
 def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_start, test_end):
     # gen data 
     dg =  DataGen(fp.general_config,fp._logger)
     dg.get_hist_data_proxy()
     fetch_start = min([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
     fetch_end =  max([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
-    trades = dg.get_trades(sym=sym, sd=fetch_start, ed=fetch_end)
+    trades = dg.get_hist_trades(sym=sym, sd=fetch_start, ed=fetch_end)
+    orderbooks = dg.get_hist_orderbooks(sym=sym, sd=fetch_start, ed=fetch_end)
     fp._logger.info("[DONE] Get prepro raw data. {0}~{1}".format(fetch_start,fetch_end))
     Xy = dg.get_Xy(trades)
 
@@ -61,6 +87,8 @@ def preprocessing(fp, sym, train_start, train_end, valid_start, valid_end, test_
     y_val =val_datas[-1].values
     y_test =test_datas[-1].values
 
+    # scaling
+    #todo: exxpannd all  axis.  not  need -1
     scaler  = fp.get_scaler("minmax")
     X_trains[0],x_scaler = fp.scalingX(X_trains[0])
     X_vals[0],_ = fp.scalingX(X_vals[0],x_scaler)
@@ -185,7 +213,7 @@ def make_parser():
         '-mode','--execute_mode',
         type=str, 
         required=True,
-        choices=[ 'prepro','train','gtrain'],
+        choices=[ 'prepro','train','gtrain','rpredict'],
         help='Execution mode. ')
     
     parser.add_argument(
