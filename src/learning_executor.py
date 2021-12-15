@@ -36,18 +36,14 @@ class LearningEvaluator(BaseProcess):
         self.train_losses = []
         self.val_losses = []
         
-        self.build_mlflow_run(**mlflow_tags)
+        self.build_mlflow_run(mlflow_tags)
 
         
-    def build_mlflow_run(self, run_name=None, user=None, source=None):
-        run_name = dt.now().strftime("%Y%m%d%H%M%s") if run_name is None else run_name
-        user = 'ANONYMOUS' if user is None else user
-        source = 'PYTHON' if source  is None else source
-        self.mlflow_tags = {
-                MLFLOW_RUN_NAME:run_name,
-                MLFLOW_USER:user,
-                MLFLOW_SOURCE_NAME:source,
-            }
+    def build_mlflow_run(self, tag):
+        tag[MLFLOW_RUN_NAME]  = dt.now().strftime("%Y%m%d%H%M%s") if tag[MLFLOW_RUN_NAME] is None else tag[MLFLOW_RUN_NAME]
+        tag[MLFLOW_USER]  = 'ANONYMOUS' if tag[MLFLOW_USER] is None else tag[MLFLOW_USER]
+        tag[MLFLOW_SOURCE_NAME]  = 'PYTHON' if tag[MLFLOW_SOURCE_NAME]  is None else tag[MLFLOW_SOURCE_NAME]
+        self.mlflow_tags = tag
         self.mlwriter = None
         
     def create_mlflow_run(self,tracking_uri=None):

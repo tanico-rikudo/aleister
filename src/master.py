@@ -3,6 +3,7 @@ import logging
 import logging.config
 import argparse
 from sklearn.model_selection import ParameterGrid
+from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME,MLFLOW_USER,MLFLOW_SOURCE_NAME
 from datetime import datetime as dt
 os.environ['BASE_DIR'] =  '/Users/macico/Dropbox/btc'
 os.environ['KULOKO_DIR'] = os.path.join(os.environ['BASE_DIR'], "kuloko")
@@ -53,17 +54,21 @@ class OperateMaster:
         self.fp.load_model_config(source="ini", path=None, model_name=self.model_name)
 
         
-    def init_learning(self, mlflow_tags):
-        self.le = LearningEvaluator(self.id, self.model_name, mlflow_tags)
+    def init_learning(self):
+        self.le = LearningEvaluator(self.id, self.model_name, self.mlflow_tags)
         self.le.get_device()
         self.le.load_general_config(source="ini", path=None,mode=self.config_mode)
-        
         
     def init_dataGen(self, remote=False):
         self.dg =  DataGen(self.fp.general_config, self.fp._logger)
         if remote:
             self.dg.init_mqclient()
-            
+
+    def set_mlflow_tags(self, mlflow_tags):
+        self.mlflow_tags = mlflow_tags
+        
+    def update_mlflow_tags(self, key, val):
+        self.mlflow_tags[key] =  val
             
     def realtime_preprocessing(general_config,logger, scaler):
         # get data vim mq
@@ -161,7 +166,7 @@ class OperateMaster:
         self.le.terminated()
         
         # validation if data exist
-        test_out_of_data(self.fp, self.le)
+        self.test_out_of_data()
         
         
     def train(self):  
@@ -173,7 +178,7 @@ class OperateMaster:
         self.le.load_model_config(source="ini", path=None, model_name=self.le.model_name)
         self.le.load_model_hparameters(self.le.model_name)
             
-        train_worker(self.fp, self.le,X_trains, X_vals,  y_train, y_val)
+        self.train_worker(X_trains, X_vals,  y_train, y_val)
 
     def gtrain(self):  
         obj_keys = ["X_train", "X_val", "y_train", "y_val"]
@@ -183,11 +188,16 @@ class OperateMaster:
         
         model_config = self.le.load_model_config(source="yaml", path=None, model_name=self.le.model_name, replace=False)
         param_grid = ParameterGrid(model_config)
-        for g in param_grid:
+        
+        original_run_name = self.mlflow_tags[MLFLOW_RUN_NAME]
+        for i, g in enumerate(param_grid):
             g=  { self.le.model_name: g}
             self.le.load_model_config(source="dict", dict_obj=g, model_name=self.le.model_name, replace =True)
             self.le.load_model_hparameters(self.le.model_name)
-            train_worker(self.fp, self.le,X_trains, X_vals,  y_train, y_val)
+            # new experiment
+            self.update_mlflow_tags(MLFLOW_RUN_NAME, f"{original_run_name}_{i}")
+            self.le.build_mlflow_run(self.mlflow_tags)
+            self.train_worker(X_trains, X_vals,  y_train, y_val)
                 
     def test_out_of_data(self):
         obj_keys = ["X_test", "y_test"]
@@ -322,20 +332,21 @@ def main(args):
     # sym
     sym = arg_dict["symbol"] 
     
+    #mlflow
+    mlflow_tags = {
+        MLFLOW_USER:arg_dict["user"],
+        MLFLOW_SOURCE_NAME:arg_dict["source"],
+        MLFLOW_RUN_NAME: f"TRAIN_{dt.now().strftime('%y%m%d%H%M%s')}"
+    }
+
     # load meta info
     om = OperateMaster()
     om.load_meta(_id, model_name,  config_mode )
+    om.set_mlflow_tags(mlflow_tags)
 
     # load conofigs into each module
     om.init_prepro()
-    
-    
-    mlflow_tags = {
-        "user":arg_dict["user"],
-        "source":arg_dict["source"],
-        "run_name": f"TRAIN_{dt.now().strftime('%y%m%d%H%M%s')}"
-    }
-    om.init_learning(mlflow_tags)
+    om.init_learning()
 
     if arg_dict["execute_mode"] == "prepro":
         om.init_dataGen()

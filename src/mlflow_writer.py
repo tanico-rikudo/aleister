@@ -21,7 +21,6 @@ class MlflowWriter():
             self.experiment_id = self.client.create_experiment(experiment_name)
         except:
             self.experiment_id = self.client.get_experiment_by_name(experiment_name).experiment_id
-
         self.run_id = self.client.create_run(self.experiment_id,tags=run_tags).info.run_id
         self.experiment = self.client.get_experiment(self.experiment_id)
         self._logger.info(f"New run started: {run_tags[MLFLOW_RUN_NAME]}")
