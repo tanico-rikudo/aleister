@@ -39,7 +39,11 @@ class DataGen:
         return trades
     
     def get_hist_orderbooks(self,sym, sd, ed):
+        # only local
         orderbooks=self.hd.load(sym,'orderbooks', sd ,ed, 'local')
+        if orderbooks is None:
+            self.logger.warning("[Failure] Orderbook fethcing.")
+            return None
         orderbooks.timestamp =  pd.to_datetime(orderbooks.timestamp)
         orderbooks.set_index("timestamp",inplace=True)
         return orderbooks

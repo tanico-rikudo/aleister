@@ -34,7 +34,7 @@ global fp
 global le
 
 # todo: CLass.  it waste to connect   every  time....
-class OperateMaster(Object):
+class OperateMaster:
     def __init__(self):
         self.dg = None
         self.fp = None
@@ -42,17 +42,19 @@ class OperateMaster(Object):
         self._id =None
         self.config_mode =  None
         
-    def load_meta(self, _id, config_mode):
+    def load_meta(self, _id, model_name,  config_mode):
         self.id = _id
+        self.model_name = model_name
         self.config_mode = config_mode
         
     def init_prepro(self):
         self.fp = featurePreprocess(self.id)
         self.fp.load_general_config(source="ini", path=None,mode=self.config_mode)
+        self.fp.load_model_config(source="ini", path=None, model_name=self.model_name)
 
         
-    def init_learning(self,model_name, mlflow_tags):
-        self.le = LearningEvaluator(self.id, model_name, mlflow_tags)
+    def init_learning(self, mlflow_tags):
+        self.le = LearningEvaluator(self.id, self.model_name, mlflow_tags)
         self.le.get_device()
         self.le.load_general_config(source="ini", path=None,mode=self.config_mode)
         
@@ -65,19 +67,19 @@ class OperateMaster(Object):
             
     def realtime_preprocessing(general_config,logger, scaler):
         # get data vim mq
-        datas = dg.fetch_realdata()
+        datas = self.dg.fetch_realdata()
 
         self.fp._logger.info("[DONE] Get prepro raw data")
         
         #prepro
-        X = dg.get_Xy(trades)
+        X = self.dg.get_Xy(trades, orderbooks)
         X, _ = self.fp.feature_label_split(df=X, target_col=ans_col)
         X,_ = self.fp.scalingX( X,scaself.ler)
         
         return X
         
     def predict(self, sym ):
-        self.fp.load_numpy_datas(["x_scaself.ler"])
+        self.fp.load_numpy_datas(["x_scaler"])
         X = realtime_preprocessing(fp.general_config,self.fp._logger, scaler)
         
         # todo: mode conider
@@ -87,13 +89,13 @@ class OperateMaster(Object):
 
     def preprocessing(self, sym, train_start, train_end, valid_start, valid_end, test_start, test_end):
         # gen data 
-        dg.get_hist_data_proxy()
+        self.dg.get_hist_data_proxy()
         fetch_start = min([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
         fetch_end =  max([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
-        trades = dg.get_hist_trades(sym=sym, sd=fetch_start, ed=fetch_end)
-        orderbooks = dg.get_hist_orderbooks(sym=sym, sd=fetch_start, ed=fetch_end)
+        trades = self.dg.get_hist_trades(sym=sym, sd=fetch_start, ed=fetch_end)
+        orderbooks = self.dg.get_hist_orderbooks(sym=sym, sd=fetch_start, ed=fetch_end)
         self.fp._logger.info("[DONE] Get prepro raw data. {0}~{1}".format(fetch_start,fetch_end))
-        Xy = dg.get_Xy(trades)
+        Xy = self.dg.get_Xy(trades,orderbooks)
 
         # prepro
         ans_col = self.fp.model_config.get("ANS_COL")
@@ -115,14 +117,14 @@ class OperateMaster(Object):
 
         # scaling
         #todo: exxpannd all  axis.  not  need -1
-        scaself.ler  = self.fp.get_scaself.ler("minmax")
-        X_trains[0],x_scaself.ler = self.fp.scalingX(X_trains[0])
-        X_vals[0],_ = self.fp.scalingX(X_vals[0],x_scaself.ler)
-        X_tests[0],_ = self.fp.scalingX(X_tests[0],x_scaself.ler)
+        self.x_scaler  = self.fp.get_scaler("minmax")
+        X_trains[0],x_scaler = self.fp.scalingX(X_trains[0])
+        X_vals[0],_ = self.fp.scalingX(X_vals[0],x_scaler)
+        X_tests[0],_ = self.fp.scalingX(X_tests[0],x_scaler)
         self.fp.save_numpy_datas(**{
             "X_train": X_trains[0], "X_val":X_vals[0], "X_test": X_tests[0],
             "y_train":y_train, "y_val":y_val, "y_test":y_test,
-            "x_scaself.ler":x_scaself.ler
+            "x_scaler":x_scaler
         })
         
     def train_worker(self,  X_trains, X_vals,  y_train, y_val ):
@@ -322,7 +324,7 @@ def main(args):
     
     # load meta info
     om = OperateMaster()
-    om.load_meta(_id, config_mode)
+    om.load_meta(_id, model_name,  config_mode )
 
     # load conofigs into each module
     om.init_prepro()
@@ -333,7 +335,7 @@ def main(args):
         "source":arg_dict["source"],
         "run_name": f"TRAIN_{dt.now().strftime('%y%m%d%H%M%s')}"
     }
-    om.init_learning(_id, model_name, mlflow_tags, config_mode)
+    om.init_learning(mlflow_tags)
 
     if arg_dict["execute_mode"] == "prepro":
         om.init_dataGen()
