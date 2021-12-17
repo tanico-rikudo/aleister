@@ -26,7 +26,7 @@ from model_modules import *
 import  mlflow
 
 class LearningEvaluator(BaseProcess):
-    def __init__(self, _id, model_name, mlflow_tags):
+    def __init__(self, _id, model_name):
         super().__init__(_id)
         self.id = _id
         self.model_name = model_name
@@ -36,27 +36,11 @@ class LearningEvaluator(BaseProcess):
         self.train_losses = []
         self.val_losses = []
         
-        self.build_mlflow_run(mlflow_tags)
-
-        
-    def build_mlflow_run(self, tag):
-        tag[MLFLOW_RUN_NAME]  = dt.now().strftime("%Y%m%d%H%M%s") if tag[MLFLOW_RUN_NAME] is None else tag[MLFLOW_RUN_NAME]
-        tag[MLFLOW_USER]  = 'ANONYMOUS' if tag[MLFLOW_USER] is None else tag[MLFLOW_USER]
-        tag[MLFLOW_SOURCE_NAME]  = 'PYTHON' if tag[MLFLOW_SOURCE_NAME]  is None else tag[MLFLOW_SOURCE_NAME]
-        self.mlflow_tags = tag
         self.mlwriter = None
         
-    def create_mlflow_run(self,tracking_uri=None):
-        #todo set outside
-        tracking_uri= os.environ['MLFLOW_TRACKING_URI'] 
-        client_kwargs = {
-            "tracking_uri":tracking_uri
-        }
-        self.mlwriter = MlflowWriter(self._logger,client_kwargs)
-        self.mlwriter.create_experiment(self.id,  self.mlflow_tags)
-        
-    def close_mlflow_run(self):
-        self.mlwriter.set_terminated()
+    def build_mlflow(self, mlwriter, mlflow_tags):
+        self.mlwriter = mlwriter
+        self.mlflow_tags = mlflow_tags
                 
     def get_device(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -157,7 +141,7 @@ class LearningEvaluator(BaseProcess):
         }
         
 
-        self.create_mlflow_run()
+        self.mlwriter.create_experiment(self.id,  self.mlflow_tags)
         self.mlwriter.log_params_from_omegaconf_dict(dict_config)
         
         # start
@@ -286,21 +270,13 @@ class LearningEvaluator(BaseProcess):
             save_path = self.mlwriter.log_artifact(pytorch_model_path)
             self._logger.info("[DONE] Save Model. Path={0}".format(save_path))
         
-    def load_mlflow_model(self):
-        model_uri = os.path.join(self.mlwriter.experiment.artifact_location,"model")
-        # model_uri = "runs:/{}/model".format(self.mlwriter.run_id)
-        # self.model = mlflow.pytorch.load_model(model_uri)
-        name="tttt"
-        # mv = self.mlwriter.client.create_model_version(name, model_uri, run.info.run_id)
-        # artifact_uri = self.mlwriter.client.get_model_version_download_uri(name, mv.version)
+    def load_mlflow_model(self, model_uri):
+        # model_uri = os.path.join(self.mlwriter.experiment.artifact_location,"model")
+        # name="tttt"
         self._logger.info("[DONE] Load Model. Path={0}".format(model_uri))
-        self.model = mlflow.pytorch.load_model(mlflow.get_artifact_uri("model"))
+        self.model = mlflow.pytorch.load_model(model_uri)
         self._logger.info("[DONE] Load Model. Path={0}".format(model_uri))
-        
-    # def load_model_weight(self, load_path=None):
-    #     load_path = self.save_path if load_path is None else load_path
-    #     self.model.load_state_dict(torch.load(load_path))#.to(self.device)
-    #     self._logger.info("[DONE] Load Model. Path={0}".format(load_path))
+    
 
     def plot_losses(self):
         """
@@ -327,4 +303,4 @@ class LearningEvaluator(BaseProcess):
 
     def terminated(self):
         #todo: more sophisticate
-        self.close_mlflow_run()
+        self.mlwriter.set_terminated()

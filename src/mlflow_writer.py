@@ -6,7 +6,7 @@ mlflow.set_tracking_uri(os.environ['MLFLOW_ARTIFACTS_URI'] )
 from mlflow.tracking import MlflowClient
 from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME,MLFLOW_USER,MLFLOW_SOURCE_NAME
     
-
+    
 class MlflowWriter():
     """
     MLflow tracking wrapper
@@ -15,6 +15,12 @@ class MlflowWriter():
     def __init__(self,logger, kwargs):
         self.client = MlflowClient(**kwargs)
         self._logger = logger
+        
+    def build_mlflow_tags(self, tag):
+        tag[MLFLOW_RUN_NAME]  = dt.now().strftime("%Y%m%d%H%M%s") if tag[MLFLOW_RUN_NAME] is None else tag[MLFLOW_RUN_NAME]
+        tag[MLFLOW_USER]  = 'ANONYMOUS' if tag[MLFLOW_USER] is None else tag[MLFLOW_USER]
+        tag[MLFLOW_SOURCE_NAME]  = 'PYTHON' if tag[MLFLOW_SOURCE_NAME]  is None else tag[MLFLOW_SOURCE_NAME]
+        return  tag
         
     def create_experiment(self, experiment_name, run_tags):
         try:
@@ -49,11 +55,12 @@ class MlflowWriter():
         return  s
 
         
-    def create_model_version(self, model_name, desc=""):
+    def create_model_version(self, model_name, run_id=None, desc=""):
+        run_id = run_id if run_id is not None else self.run_id
         mv = self.client.create_model_version(
             name=model_name,
-            source=os.path.join(self.experiment.artifact_location, self.run_id, "artifacts", "model"),
-            run_id=self.run_id,
+            source=os.path.join(self.experiment.artifact_location, run_id, "artifacts", "model"),
+            run_id=run_id,
             description=desc
         )
         self._logger.info("[DONE] Create modek version")
@@ -63,7 +70,18 @@ class MlflowWriter():
         self._logger.info("Status: {}".format(mv.status))
         self._logger.info("Stage: {}".format(mv.current_stage))
         
+    def deploy_model_to_production(self, model_name, version):
+        self.client.transition_model_version_stage(
+            name=model_name,
+            version=version,
+            stage="production"
+        )
+        
+    def search_staged_models(self, model_name):
+        mvs  = self.client.search_model_versions("name='"+model_name+"'")
+        return mvs
 
+        
     def log_params_from_omegaconf_dict(self, params):
         for param_name, element in params.items():
             self._explore_recursive(param_name, element)

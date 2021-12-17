@@ -47,15 +47,19 @@ class OperateMaster:
         self.id = _id
         self.model_name = model_name
         self.config_mode = config_mode
+    
+    def init_mlflow(self):
+        self.mlwriter = MlflowWriter(self.le._logger,self.client_kwargs)
+        self.mlflow_tags = self.mlwriter.build_mlflow_tags(self.mlflow_tags)
         
     def init_prepro(self):
         self.fp = featurePreprocess(self.id)
         self.fp.load_general_config(source="ini", path=None,mode=self.config_mode)
         self.fp.load_model_config(source="ini", path=None, model_name=self.model_name)
 
-        
     def init_learning(self):
-        self.le = LearningEvaluator(self.id, self.model_name, self.mlflow_tags)
+        self.le = LearningEvaluator(self.id, self.model_name)
+        self.build_mlflow(self.mlflow_client_kwargs, self.mlflow_tags)
         self.le.get_device()
         self.le.load_general_config(source="ini", path=None,mode=self.config_mode)
         
@@ -64,8 +68,9 @@ class OperateMaster:
         if remote:
             self.dg.init_mqclient()
 
-    def set_mlflow_tags(self, mlflow_tags):
+    def set_mlflow_settings(self, mlflow_client_kwargs, mlflow_tags):
         self.mlflow_tags = mlflow_tags
+        self.mlflow_client_kwargs  = mlflow_client_kwargs
         
     def update_mlflow_tags(self, key, val):
         self.mlflow_tags[key] =  val
@@ -84,12 +89,14 @@ class OperateMaster:
         return X
         
     def predict(self, sym ):
-        self.fp.load_numpy_datas(["x_scaler"])
+        scaler = self.fp.load_numpy_datas(["x_scaler"])
         X = realtime_preprocessing(fp.general_config,self.fp._logger, scaler)
         
         # todo: mode conider
-        self.le.load_mlflow_model()
+        uri  = self.load_prod_model()
+        self.le.load_mlflow_model(uri)
         prediction = self.le.prediction(x)
+        #todo: save somwwhre
         return prediction
 
     def preprocessing(self, sym, train_start, train_end, valid_start, valid_end, test_start, test_end):
@@ -196,7 +203,7 @@ class OperateMaster:
             self.le.load_model_hparameters(self.le.model_name)
             # new experiment
             self.update_mlflow_tags(MLFLOW_RUN_NAME, f"{original_run_name}_{i}")
-            self.le.build_mlflow_run(self.mlflow_tags)
+            self.le.set_mlflow_settings(self.mlflow_client_kwargs, self.mlflow_tags)
             self.train_worker(X_trains, X_vals,  y_train, y_val)
                 
     def test_out_of_data(self):
@@ -221,6 +228,49 @@ class OperateMaster:
         
         # decline end
         self.le.terminated()
+        
+    def deploy_best_model(self):
+        
+        # pick best model 
+        model_name = self.id
+        experiment_id = self.mlwriter.experiment_id
+        best_run = self.mlwriter.client.search_runs(
+            experiment_ids=[experiment_id],
+            max_results=1,
+            order_by=["metrics.accuracy DESC"]
+            )[0]
+        best_run_id  = best_run.info.run_id
+        
+        # register model 
+        self.mlwriter.register_model(model_name)
+        
+        # register(if no momdel)
+        self.mlwriter.create_model_version(model_name, best_run_id)
+        
+        # movw on to prod
+        self.mlwriter.deploy_model_to_production(model_name, version_id)
+        
+        
+    def load_prod_model(self):
+        model_name = self.id
+        prod_mvs = []
+        mvs  = self.mlwriter.search_staged_models(model_name)
+        for mv in  mvs :
+            if mv.current_stage  == 'Production':
+                prod_mvs.append(mv)
+        if len(prod_mvs):
+            raise Exception("No Model on Prod Stage.")
+        run_id = prod_mvs[0].run_id #lastest
+        run_info = self.mlwriter.client.get_run(run_id)
+        uri =  os.path.join(run_info.info.artifact_uri, "model" ) 
+        return  uri
+    
+        
+        # if model_tribe == 'torch':
+        #     return mlflow.pytorch.load_model(uri)
+        # else:
+        #     raise Exception("No artificial model.")
+        
         
 def make_parser():
     parser = argparse.ArgumentParser(
@@ -251,7 +301,7 @@ def make_parser():
         '-mode','--execute_mode',
         type=str, 
         required=True,
-        choices=[ 'prepro','train','gtrain','rpredict'],
+        choices=[ 'prepro','train','gtrain','rpredict', 'deploy_model'],
         help='Execution mode. ')
     
     parser.add_argument(
@@ -338,11 +388,15 @@ def main(args):
         MLFLOW_SOURCE_NAME:arg_dict["source"],
         MLFLOW_RUN_NAME: f"TRAIN_{dt.now().strftime('%y%m%d%H%M%s')}"
     }
+    
+    mlflow_client_kwargs = {
+            "tracking_uri":os.environ['MLFLOW_TRACKING_URI'] 
+        }
 
     # load meta info
     om = OperateMaster()
     om.load_meta(_id, model_name,  config_mode )
-    om.set_mlflow_tags(mlflow_tags)
+    om.set_mlflow_settings(mlflow_tags, mlflow_client_kwargs)
 
     # load conofigs into each module
     om.init_prepro()
