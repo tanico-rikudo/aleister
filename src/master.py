@@ -409,6 +409,8 @@ def main(args):
         om.train()
     elif arg_dict["execute_mode"] == "gtrain":
         om.gtrain()
+    elif arg_dict["execute_mode"] == "deploy_model":
+        om.deploy_best_mode
     elif arg_dict["execute_mode"] == "rpredict":
         om.init_dataGen(remote=True)
         om.predict()
