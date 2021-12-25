@@ -1,7 +1,9 @@
 import hist_data
 import pandas as pd
 import  numpy as np
-from mq_handler import *
+import sys,os
+sys.path.append(os.environ['COMMON_DIR'] )
+from mq.mq_handler import *
 
 from multiprocessing import Process
 VOLATILITY_VAR_DAYS = 30
