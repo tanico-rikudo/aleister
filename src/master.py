@@ -370,14 +370,10 @@ def main(args):
     _id = arg_dict["model_id"]
     config_mode = arg_dict["config_mode"].upper()
     model_name = arg_dict["model_name"].upper()
-
-    # period
-    train_start = arg_dict["train_start_date"] if "train_start_date" in arg_dict.keys() else None
-    train_end = arg_dict["train_end_date"] if "train_end_date" in arg_dict.keys() else None
-    valid_start = arg_dict["valid_start_date"] if "valid_start_date" in arg_dict.keys() else None
-    valid_end = arg_dict["valid_end_date"]if "valid_end_date" in arg_dict.keys() else None
-    test_start = arg_dict["test_start_date"] if "test_start_date" in arg_dict.keys() else None
-    test_end = arg_dict["test_end_date"] if "test_end_date" in arg_dict.keys() else None
+    
+    om = OperateMaster()
+    om.load_meta(_id, model_name,  config_mode )
+    om.init_prepro()
 
     # sym
     sym = arg_dict["symbol"] 
@@ -388,35 +384,36 @@ def main(args):
         MLFLOW_SOURCE_NAME:arg_dict["source"],
         MLFLOW_RUN_NAME: f"TRAIN_{dt.now().strftime('%y%m%d%H%M%s')}"
     }
-    
     mlflow_client_kwargs = {
             "tracking_uri":os.environ['MLFLOW_TRACKING_URI'] 
         }
-
-    # load meta info
-    om = OperateMaster()
-    om.load_meta(_id, model_name,  config_mode )
     om.set_mlflow_settings(mlflow_tags, mlflow_client_kwargs)
 
     # load conofigs into each module
-    om.init_prepro()
     om.init_learning()
 
     if arg_dict["execute_mode"] == "prepro":
         om.init_dataGen()
+        # period
+        train_start = arg_dict["train_start_date"] if "train_start_date" in arg_dict.keys() else None
+        train_end = arg_dict["train_end_date"] if "train_end_date" in arg_dict.keys() else None
+        valid_start = arg_dict["valid_start_date"] if "valid_start_date" in arg_dict.keys() else None
+        valid_end = arg_dict["valid_end_date"]if "valid_end_date" in arg_dict.keys() else None
+        test_start = arg_dict["test_start_date"] if "test_start_date" in arg_dict.keys() else None
+        test_end = arg_dict["test_end_date"] if "test_end_date" in arg_dict.keys() else None
         om.preprocessing(sym, train_start, train_end, valid_start, valid_end, test_start, test_end)
-    elif arg_dict["execute_mode"] == "train":
-        om.train()
-    elif arg_dict["execute_mode"] == "gtrain":
-        om.gtrain()
-    elif arg_dict["execute_mode"] == "deploy_model":
-        om.deploy_best_mode
-    elif arg_dict["execute_mode"] == "rpredict":
-        om.init_dataGen(remote=True)
-        om.predict()
-
     else:
-        pass
+        if arg_dict["execute_mode"] == "train":
+            om.train()
+        elif arg_dict["execute_mode"] == "gtrain":
+            om.gtrain()
+        elif arg_dict["execute_mode"] == "deploy_model":
+            om.deploy_best_mode
+        elif arg_dict["execute_mode"] == "rpredict":
+            om.init_dataGen(remote=True)
+            om.predict()
+            
+    
 if __name__ == "__main__":
     main(args)
 
