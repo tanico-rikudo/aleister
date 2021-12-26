@@ -36,17 +36,21 @@ class DataGen:
     #### Fetch hist data ###
     def get_hist_trades(self,sym, sd, ed):
         trades=self.hd.load(sym,'trades', sd ,ed)
-        trades.timestamp =  pd.to_datetime(trades.timestamp)
+        # print(trades.timestamp)
+        trades.timestamp =  pd.to_datetime(trades.timestamp,format='%Y%m%d%H%M%S%f')
+        if (trades is None) or (trades.shape[0] == 0):
+            self.logger.warning("[Failure] trades fethcing.")
+            return None
         trades.set_index("timestamp",inplace=True)
         return trades
     
     def get_hist_orderbooks(self,sym, sd, ed):
         # only local
         orderbooks=self.hd.load(sym,'orderbooks', sd ,ed, 'local')
-        if orderbooks is None:
+        if (orderbooks is None) or (orderbooks.shape[0] == 0):
             self.logger.warning("[Failure] Orderbook fethcing.")
             return None
-        orderbooks.timestamp =  pd.to_datetime(orderbooks.timestamp)
+        orderbooks.timestamp =  pd.to_datetime(orderbooks.timestamp,format='%Y%m%d%H%M%S%f')
         orderbooks.set_index("timestamp",inplace=True)
         return orderbooks
         
@@ -65,7 +69,7 @@ class DataGen:
         Returns:
             [type]: [description]
         """
-        
+        # trade based data
         buy_size = trades.loc[trades.loc[:,"side"]=="BUY",["size"]].resample('T', label='left', closed='left').sum().fillna(0).rename(columns={"size":"buy_size"})
         sell_size = trades.loc[trades.loc[:,"side"]=="SELL",["size"]].resample('T', label='left', closed='left').sum().fillna(0).rename(columns={"size":"sell_size"})
         ohlcv = self.get_ohlcv(trades)

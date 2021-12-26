@@ -62,23 +62,32 @@ class featurePreprocess(BaseProcess):
 
         trains, vals, tests = None, None, None
         try:
-            train_start, train_end = dl.intD_to_strYMD(train_start), dl.intD_to_strYMD(train_end)
-
-            trains  = [  df.loc[train_start:train_end] for  df in  dfs ]
-            self._logger.info("[DONE] Split data. Train:{0}({1}~{2})".format(len(trains[0]), train_start, train_end))
+            if (train_start is None) or (train_start is None):
+                 self._logger.info("[Skip] Split data. Dates:({0};{1}) is not appropriate".format(train_start, train_end))
+            else:
+                train_start, train_end = dl.intD_to_strYMD(train_start), dl.intD_to_strYMD(train_end)
+                trains  = [  df.loc[train_start:train_end] for  df in  dfs ]
+                self._logger.info("[DONE] Split data. Train:{0}({1}~{2})".format(len(trains[0]), train_start, train_end))
         except Exception as e:
             self._logger.warning("[Failure] Split data. Train:{0}~{1}:{2}".format(train_start, train_end,e))
+            
         try:
-            valid_start, valid_end = dl.intD_to_strYMD(valid_start), dl.intD_to_strYMD(valid_end)
-            vals  = [  df.loc[valid_start:valid_end] for  df in  dfs ]
-            self._logger.info("[DONE] Split data. Valid:{0}({1}~{2})".format(len(vals[0]), valid_start, valid_end))
+            if (valid_start is None) or (valid_end is None):
+                 self._logger.info("[Skip] Split data. Dates:({0};{1}) is not appropriate".format(valid_start, valid_end))
+            else:
+                valid_start, valid_end = dl.intD_to_strYMD(valid_start), dl.intD_to_strYMD(valid_end)
+                vals  = [  df.loc[valid_start:valid_end] for  df in  dfs ]
+                self._logger.info("[DONE] Split data. Valid:{0}({1}~{2})".format(len(vals[0]), valid_start, valid_end))
         except Exception as e:
             self._logger.warning("[Failure] Split data. Valid:{0}~{1}:{2}".format(valid_start, valid_end,e))
 
         try:
-            test_start, test_end = dl.intD_to_strYMD(test_start), dl.intD_to_strYMD(test_end)
-            tests  = [  df.loc[test_start:test_end] for  df in  dfs ]
-            self._logger.info("[DONE] Split data. Test:{0}({1}~{2})".format(len(tests[0]), test_start, test_end))
+            if (test_start is None) or (test_end is None):
+                 self._logger.info("[Skip] Split data. Dates:({0};{1}) is not appropriate".format(test_start, test_end))
+            else:
+                test_start, test_end = dl.intD_to_strYMD(test_start), dl.intD_to_strYMD(test_end)
+                tests  = [  df.loc[test_start:test_end] for  df in  dfs ]
+                self._logger.info("[DONE] Split data. Test:{0}({1}~{2})".format(len(tests[0]), test_start, test_end))
         except Exception as e:
             self._logger.warning("[Failure] Split data. Test:{0}~{1}:{2}".format( test_start, test_end,e))
         return trains, vals, tests
@@ -93,10 +102,12 @@ class featurePreprocess(BaseProcess):
         self._logger.info("[DONE] Get scaler:{0}".format(scaler.lower()))
         return scalers.get(scaler.lower())()
 
-    def scalingX(self, X,  scaler=None):
+    def scalingX(self, X,  scaler=None, scaler_name=None):
         if scaler is None:
-            scaler = self.get_scaler('minmax')
-            X_scaled = scaler.fit_transform(X)
+            scaler = self.get_scaler(scaler_name)
+            self._logger.info(f"[DONE] New Xscaler Initilized. Name={scaler_name}")
+            scaler.fit(X)            
+            X_scaled = scaler.transform(X)
         else:
             X_scaled = scaler.transform(X)
         return X_scaled,scaler
