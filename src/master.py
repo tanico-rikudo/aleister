@@ -5,18 +5,10 @@ import argparse
 from sklearn.model_selection import ParameterGrid
 from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME,MLFLOW_USER,MLFLOW_SOURCE_NAME
 from datetime import datetime as dt
-os.environ['BASE_DIR'] =  '/Users/macico/Dropbox/btc'
-os.environ['KULOKO_DIR'] = os.path.join(os.environ['BASE_DIR'], "kuloko")
-os.environ['ALEISTER_DIR'] = os.path.join(os.environ['BASE_DIR'], "aleister")
-os.environ['COMMON_DIR'] = os.path.join(os.environ['BASE_DIR'], "geco_commons")
-os.environ['KULOKO_INI'] = os.path.join(os.environ['COMMON_DIR'], "ini")
-os.environ['ALEISTER_INI'] = os.path.join(os.environ['COMMON_DIR'], "ini")
-os.environ['MONGO_DIR'] = os.path.join(os.environ['COMMON_DIR'] ,"mongodb")
-os.environ['LOGDIR'] = os.path.join(os.environ['KULOKO_DIR'], "log")
-sys.path.append(os.path.join(os.environ['KULOKO_DIR'],"items" ))
 
+sys.path.append(os.path.join(os.environ['KULOKO_DIR'],"items" ))
 sys.path.append(os.path.join(os.path.dirname('__file__'),'..'))
-os.environ['INIDIR'] = '/Users/macico/Dropbox/btc/kuloko/ini'
+os.environ['INIDIR'] = os.environ['ALEISTER_INI'] 
 INIDIR=os.environ['INIDIR'] 
 LOGDIR=os.environ['LOGDIR']
 
@@ -59,7 +51,7 @@ class OperateMaster:
 
     def init_learning(self):
         self.le = LearningEvaluator(self.id, self.model_name)
-        self.build_mlflow(self.mlflow_client_kwargs, self.mlflow_tags)
+        self.le.build_mlflow(self.mlflow_client_kwargs, self.mlflow_tags)
         self.le.get_device()
         self.le.load_general_config(source="ini", path=None,mode=self.config_mode)
         
@@ -102,12 +94,14 @@ class OperateMaster:
     def preprocessing(self, sym, train_start, train_end, valid_start, valid_end, test_start, test_end):
         # gen data 
         self.dg.get_hist_data_proxy()
+        self.fp._logger.info(f"{train_start}, {train_end}, {valid_start}, {valid_end}, {test_start}, {test_end}")
         fetch_start = min([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
         fetch_end =  max([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
         trades = self.dg.get_hist_trades(sym=sym, sd=fetch_start, ed=fetch_end)
         orderbooks = self.dg.get_hist_orderbooks(sym=sym, sd=fetch_start, ed=fetch_end)
-        self.fp._logger.info("[DONE] Get prepro raw data. {0}~{1}".format(fetch_start,fetch_end))
         Xy = self.dg.get_Xy(trades,orderbooks)
+        self.fp._logger.info("[DONE] Get prepro raw data. {0}~{1}".format(fetch_start,fetch_end))
+
 
         # prepro
         ans_col = self.fp.model_config.get("ANS_COL")
@@ -115,26 +109,34 @@ class OperateMaster:
         y = self.fp.onehot_y(y)
         
         # split period
+        # Note: If other kind data , such as attribute data linked to timeseries, will be added,
+        #  train_val_test_period_split  can process it. Then, Input [X, data1, data2, y].
         train_datas, val_datas , test_datas = \
-                self.fp.train_val_test_period_split((X,y), train_start, train_end, valid_start, valid_end, test_start, test_end)
+                self.fp.train_val_test_period_split([X,y], train_start, train_end, valid_start, valid_end, test_start, test_end)
             
-        # assign
-        X_trains = [ train_data.values for  train_data in train_datas[:-1] ]
-        X_vals = [ val_data.values for  val_data in val_datas[:-1] ]
-        X_tests = [ test_data.values for  test_data in test_datas[:-1] ]
-        
+        # assign and scaling
+        # Note: If other data except  for X is using. Fix fetching train_datas.
+        X_trains = train_datas[0].values
+        X_trains,x_scaler = self.fp.scalingX(X_trains,scaler_name="minmax")
         y_train =train_datas[-1].values
-        y_val =val_datas[-1].values
-        y_test =test_datas[-1].values
+        
+        if val_datas is not None:
+            X_vals = val_datas[0].values
+            X_vals,_ = self.fp.scalingX(X_vals,x_scaler)
+            y_val =val_datas[-1].values   
+        else:
+            X_val, y_val = None, None
+             
+        if test_datas is not None:            
+            X_tests = test_datas[0].value
+            X_tests,_ = self.fp.scalingX(X_tests,x_scaler)
+            y_test =test_datas[-1].values
+        else:
+            X_tests, y_test = None, None
 
-        # scaling
-        #todo: exxpannd all  axis.  not  need -1
-        self.x_scaler  = self.fp.get_scaler("minmax")
-        X_trains[0],x_scaler = self.fp.scalingX(X_trains[0])
-        X_vals[0],_ = self.fp.scalingX(X_vals[0],x_scaler)
-        X_tests[0],_ = self.fp.scalingX(X_tests[0],x_scaler)
+        #  Note: If other data except  for X is using. Fix X_train": X_trains, "X_val":X_vals, "X_test": X_tests
         self.fp.save_numpy_datas(**{
-            "X_train": X_trains[0], "X_val":X_vals[0], "X_test": X_tests[0],
+            "X_train": X_trains, "X_val":X_vals, "X_test": X_tests,
             "y_train":y_train, "y_val":y_val, "y_test":y_test,
             "x_scaler":x_scaler
         })
@@ -362,7 +364,7 @@ def make_parser():
     return parser
 
     
-def main(args):
+def main(args=None):
     parser = make_parser()
     arg_dict = vars(parser.parse_args(args))
 
@@ -415,7 +417,7 @@ def main(args):
             
     
 if __name__ == "__main__":
-    main(args)
+    main()
 
         
 
