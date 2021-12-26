@@ -3,6 +3,7 @@ import logging
 import logging.config
 import argparse
 from sklearn.model_selection import ParameterGrid
+from mlflow_writer import MlflowWriter
 from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME,MLFLOW_USER,MLFLOW_SOURCE_NAME
 from datetime import datetime as dt
 
@@ -41,8 +42,9 @@ class OperateMaster:
         self.config_mode = config_mode
     
     def init_mlflow(self):
-        self.mlwriter = MlflowWriter(self.le._logger,self.client_kwargs)
+        self.mlwriter = MlflowWriter(self.le._logger,self.mlflow_client_kwargs)
         self.mlflow_tags = self.mlwriter.build_mlflow_tags(self.mlflow_tags)
+        self.le.build_mlflow(self.mlwriter, self.mlflow_tags)
         
     def init_prepro(self):
         self.fp = featurePreprocess(self.id)
@@ -51,7 +53,7 @@ class OperateMaster:
 
     def init_learning(self):
         self.le = LearningEvaluator(self.id, self.model_name)
-        self.le.build_mlflow(self.mlflow_client_kwargs, self.mlflow_tags)
+        self.init_mlflow()#self.mlflow_client_kwargs, self.mlflow_tags)
         self.le.get_device()
         self.le.load_general_config(source="ini", path=None,mode=self.config_mode)
         
@@ -212,7 +214,7 @@ class OperateMaster:
         obj_keys = ["X_test", "y_test"]
         X_test, y_test = self.fp.load_numpy_datas(obj_keys)
         if X_test is None:
-            print("No test data.")
+            self.fp._logger.info("No test data.")
             return
         X_tests = [X_test]
         
@@ -389,7 +391,7 @@ def main(args=None):
     mlflow_client_kwargs = {
             "tracking_uri":os.environ['MLFLOW_TRACKING_URI'] 
         }
-    om.set_mlflow_settings(mlflow_tags, mlflow_client_kwargs)
+    om.set_mlflow_settings(mlflow_client_kwargs,mlflow_tags)
 
     # load conofigs into each module
     om.init_learning()
