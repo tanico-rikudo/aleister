@@ -12,6 +12,7 @@ Description:
   Launch aleister operation
 
 Options:
+  -e   mode( 'prepro','train','gtrain','rpredict', 'deploy_model')
   -u   user
   -s   symbol
   -i   model id
@@ -21,15 +22,17 @@ exit 1
 }
 
 SOURCE=shell
-MODE=prepro
 CONFIGSOURCE=ini
 CONFIGMODE=default
 
 
 if [ "$OPTIND" = 1 ]; then
-  while getopts u:s:i:m:h OPT
+  while getopts e:u:s:i:m:h OPT
   do
     case $OPT in
+      e)
+        MODE=$OPTARG
+        ;;
       u)
         USER=$OPTARG
         ;;
