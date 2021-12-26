@@ -1,6 +1,7 @@
 #!/bin/bash 
-set -euxo pipefail 
-. cat /shell_config.conf
+
+#load common setting
+eval 'source $BASE_DIR/geco_commons/shell/shell_config.conf'
 
 function usage() {
 cat <<_EOT_
@@ -61,7 +62,7 @@ if [ $(( $# & 1 )) -eq 1 ]; then
   echo odd period options
   exit 0
 fi
-if [ $# -eq 2 ]; then 
+if [ $# -ge 2 ]; then 
   train_start_date=$1
   train_end_date=$2
   train_period_opt="--train_start_date ${train_start_date} --train_end_date ${train_end_date}"
@@ -82,5 +83,7 @@ python_interpritor=python
 execute_path=`dirname $(pwd)`
 execute_path="${execute_path}/src"
 cd ${execute_path}
-commnad="${python_interpritor} master.py -u ${USER} -s ${SOURCE} -sym ${SYMBOL} -mode ${MODE} -cs ${CONFIGSOURCE} -cm ${CONFIGMODE} -id ${ID} -mn ${MODEL} "
-eval "${commnad} ${train_period_opt} ${valid_period_opt} ${test_period_opt} " 
+command="${python_interpritor} master.py -u ${USER} -s ${SOURCE} -sym ${SYMBOL} -mode ${MODE} -cs ${CONFIGSOURCE} -cm ${CONFIGMODE} -id ${ID} -mn ${MODEL} "
+command="${command} ${train_period_opt} ${valid_period_opt} ${test_period_opt} " 
+echo $command
+eval $command
