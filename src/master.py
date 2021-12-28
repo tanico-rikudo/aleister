@@ -53,7 +53,7 @@ class OperateMaster:
 
     def init_learning(self):
         self.le = LearningEvaluator(self.id, self.model_name)
-        self.init_mlflow()#self.mlflow_client_kwargs, self.mlflow_tags)
+        self.init_mlflow()
         self.le.get_device()
         self.le.load_general_config(source="ini", path=None,mode=self.config_mode)
         
@@ -207,7 +207,7 @@ class OperateMaster:
             self.le.load_model_hparameters(self.le.model_name)
             # new experiment
             self.update_mlflow_tags(MLFLOW_RUN_NAME, f"{original_run_name}_{i}")
-            self.le.set_mlflow_settings(self.mlflow_client_kwargs, self.mlflow_tags)
+            self.set_mlflow_settings(self.mlflow_client_kwargs, self.mlflow_tags)
             self.train_worker(X_trains, X_vals,  y_train, y_val)
                 
     def test_out_of_data(self):
@@ -237,22 +237,27 @@ class OperateMaster:
         
         # pick best model 
         model_name = self.id
-        experiment_id = self.mlwriter.experiment_id
-        best_run = self.mlwriter.client.search_runs(
+        experiment_id = self.mlwriter.get_experiment_id(self.id)
+        best_runs = self.mlwriter.client.search_runs(
             experiment_ids=[experiment_id],
             max_results=1,
             order_by=["metrics.accuracy DESC"]
-            )[0]
+            )
+        if len(best_runs) == 0:
+            self.le._logger.info(f"[END] No runs. Experiment Name={self.id}, Id={experiment_id}")
+        else:
+            best_run = best_runs[0]
+            
         best_run_id  = best_run.info.run_id
         
         # register model 
         self.mlwriter.register_model(model_name)
         
         # register(if no momdel)
-        self.mlwriter.create_model_version(model_name, best_run_id)
+        mv = self.mlwriter.create_model_version(model_name, experiment_id, best_run_id)
         
-        # movw on to prod
-        self.mlwriter.deploy_model_to_production(model_name, version_id)
+        # move on to prod
+        self.mlwriter.deploy_model_to_production(model_name, mv.version)
         
         
     def load_prod_model(self):
@@ -412,7 +417,7 @@ def main(args=None):
         elif arg_dict["execute_mode"] == "gtrain":
             om.gtrain()
         elif arg_dict["execute_mode"] == "deploy_model":
-            om.deploy_best_mode
+            om.deploy_best_model()
         elif arg_dict["execute_mode"] == "rpredict":
             om.init_dataGen(remote=True)
             om.predict()

@@ -23,10 +23,7 @@ class MlflowWriter():
         return  tag
         
     def create_experiment(self, experiment_name, run_tags):
-        try:
-            self.experiment_id = self.client.create_experiment(experiment_name)
-        except:
-            self.experiment_id = self.client.get_experiment_by_name(experiment_name).experiment_id
+        self.get_experiment_id(experiment_name)
         self.run_id = self.client.create_run(self.experiment_id,tags=run_tags).info.run_id
         self.experiment = self.client.get_experiment(self.experiment_id)
         self._logger.info(f"New run started: {run_tags[MLFLOW_RUN_NAME]}")
@@ -34,6 +31,15 @@ class MlflowWriter():
         self._logger.info(f"Experiment id: {self.experiment.experiment_id}")
         self._logger.info(f"Artifact Location: {self.experiment.artifact_location}")
         self._logger.info("[DONE] Set up MLflow tracking")
+        
+    def get_experiment_id(self,experiment_name):
+        try:
+            self.experiment_id = self.client.create_experiment(experiment_name)
+            self._logger.info(f"[DONE] Create  New experiment. ID={self.experiment_id}")
+        except:
+            self.experiment_id = self.client.get_experiment_by_name(experiment_name).experiment_id
+            self._logger.info(f"[DONE] Get experiment. ID={self.experiment_id}")
+        return self.experiment_id
         
     def register_model(self, model_name):
         """
@@ -44,7 +50,7 @@ class MlflowWriter():
         try:
             self.client.create_registered_model(model_name)
         except Exception as e:
-            self._logger.warn("[Failure] Cannot regist model. Name=f'{model_name}'. :{e}")
+            self._logger.warning("[Failure] Cannot regist model. Name=f'{model_name}'. :{e}")
         pass
         
     def print_registered_model_info(self, rm):
@@ -55,11 +61,14 @@ class MlflowWriter():
         return  s
 
         
-    def create_model_version(self, model_name, run_id=None, desc=""):
+    def create_model_version(self, model_name, experiment_id=None, run_id=None, desc=""):
+        experiment_id = experiment_id if experiment_id is not None else self.experiment_id
         run_id = run_id if run_id is not None else self.run_id
+        
+        experiment = self.client.get_experiment(experiment_id)
         mv = self.client.create_model_version(
             name=model_name,
-            source=os.path.join(self.experiment.artifact_location, run_id, "artifacts", "model"),
+            source=os.path.join(experiment.artifact_location, run_id, "artifacts", "model"),
             run_id=run_id,
             description=desc
         )
@@ -69,6 +78,7 @@ class MlflowWriter():
         self._logger.info("Description: {}".format(mv.description))
         self._logger.info("Status: {}".format(mv.status))
         self._logger.info("Stage: {}".format(mv.current_stage))
+        return mv
         
     def deploy_model_to_production(self, model_name, version):
         self.client.transition_model_version_stage(
