@@ -133,7 +133,9 @@ dmypy.json
 ini/model_config.ini
 
 #
+mlflow/
 mlruns/
 tracking/
 
 .DS_Store
+db/
