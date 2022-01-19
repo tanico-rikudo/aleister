@@ -1,2 +1,2 @@
 # aleister
-btc signal advisory  module
+Cryptocurrency signal advisory module
