@@ -80,8 +80,8 @@ if [ $# -ge 6 ]; then
   test_end_date=$6
   test_period_opt="--test_start_date ${test_start_date} --test_end_date ${test_end_date}"
 fi
-source deactivate
-source activate py37
+# source deactivate
+# source activate py37
 python_interpritor=python
 execute_path=`dirname $(pwd)`
 execute_path="${execute_path}/src"

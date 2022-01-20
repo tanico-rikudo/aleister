@@ -2,7 +2,7 @@ import os
 from util.config import ConfigManager
 
 cm = ConfigManager(os.environ['ALEISTER_INI'])
-LOGDIR=os.environ['LOGDIR']
+LOGDIR=os.environ['ALEISTER_LOGDIR']
 class BaseProcess():
     def __init__(self, _id):
         self._logger = cm.load_log_config(os.path.join(LOGDIR,'logging.log'),log_name="ALEISTER")
