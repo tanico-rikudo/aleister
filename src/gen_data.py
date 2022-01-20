@@ -11,18 +11,29 @@ VOLATILITY_DAYS = 1
 VOID_ALLOWANCE_RATIO = 1
 class DataGen:
     def __init__(self, config, logger):
-        self.hd = None
+        self.hd = hist_data.histData()
         self.mqserver_host = config.get("MQ_HOST")
         self.mqname = config.get("MQ_NAME")
         self.routing_key = config.get("MQ_ROUTING")
         self.logger = logger
         
     def init_mqclient(self):
-        self.mq_rpc_client = RpcClient(self.mqserver_host,self.mqname, self.logger)
+        self.mq_rpc_client = RpcClient(self.mqserver_host,self.routing_key, self.logger)
         
-    def get_hist_data_proxy(self):
-        hd = hist_data.histData()
-        self.hd = hd
+    def get_hist_data(self, remote, ch, sym, sd, ed):
+        if remote 
+            command = ch, sym, sd, ed # todo
+            try:
+                hist_data = self.mq_rpc_client.call(command)
+            except Exception as e:
+                hist_data = None
+                self.logger.warning(f"[Failure] Cannot fetch Feed from server.:{e}")
+        else:
+            #todo:
+            
+        return hist_data
+            
+        #  separate datas
         
     def fetch_realdata(self):
         try:
@@ -33,27 +44,6 @@ class DataGen:
             
         #  separate datas
     
-    #### Fetch hist data ###
-    def get_hist_trades(self,sym, sd, ed):
-        trades=self.hd.load(sym,'trades', sd ,ed)
-        # print(trades.timestamp)
-        trades.timestamp =  pd.to_datetime(trades.timestamp,format='%Y%m%d%H%M%S%f')
-        if (trades is None) or (trades.shape[0] == 0):
-            self.logger.warning("[Failure] trades fethcing.")
-            return None
-        trades.set_index("timestamp",inplace=True)
-        return trades
-    
-    def get_hist_orderbooks(self,sym, sd, ed):
-        # only local
-        orderbooks=self.hd.load(sym,'orderbooks', sd ,ed, 'local')
-        if (orderbooks is None) or (orderbooks.shape[0] == 0):
-            self.logger.warning("[Failure] Orderbook fethcing.")
-            return None
-        orderbooks.timestamp =  pd.to_datetime(orderbooks.timestamp,format='%Y%m%d%H%M%S%f')
-        orderbooks.set_index("timestamp",inplace=True)
-        return orderbooks
-        
     #### Convert data ###
     def get_ohlcv(self,trades):
         ohlcv =  trades.price.resample('T', label='left', closed='left').ohlc()

@@ -11,7 +11,7 @@ sys.path.append(os.path.join(os.environ['KULOKO_DIR'],"items" ))
 sys.path.append(os.path.join(os.path.dirname('__file__'),'..'))
 os.environ['INIDIR'] = os.environ['ALEISTER_INI'] 
 INIDIR=os.environ['INIDIR'] 
-LOGDIR=os.environ['LOGDIR']
+LOGDIR=os.environ['ALEISTER_LOGDIR']
 
 from  gen_data import DataGen
 from  feature_preprocess import featurePreprocess
@@ -21,7 +21,7 @@ from model_modules import parameterParser as pp
 sys.path.append(os.environ['COMMON_DIR'] )
 from util.config import ConfigManager
 
-cm = ConfigManager(os.environ['KULOKO_INI'])
+cm = ConfigManager(os.environ['ALEISTER_INI'])
 logger = cm.load_log_config(os.path.join(LOGDIR,'logging.log'),log_name="ALEISTER")
 
 global fp
@@ -95,12 +95,11 @@ class OperateMaster:
 
     def preprocessing(self, sym, train_start, train_end, valid_start, valid_end, test_start, test_end):
         # gen data 
-        self.dg.get_hist_data_proxy()
         self.fp._logger.info(f"{train_start}, {train_end}, {valid_start}, {valid_end}, {test_start}, {test_end}")
         fetch_start = min([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
         fetch_end =  max([ _date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if _date is not None])
-        trades = self.dg.get_hist_trades(sym=sym, sd=fetch_start, ed=fetch_end)
-        orderbooks = self.dg.get_hist_orderbooks(sym=sym, sd=fetch_start, ed=fetch_end)
+        trades = self.dg.get_hist_data(ch= "trades",sym=sym, sd=fetch_start, ed=fetch_end)
+        orderbooks = self.dg.get_hist_data(ch= "trades", sym=sym, sd=fetch_start, ed=fetch_end)
         Xy = self.dg.get_Xy(trades,orderbooks)
         self.fp._logger.info("[DONE] Get prepro raw data. {0}~{1}".format(fetch_start,fetch_end))
 
@@ -313,6 +312,7 @@ def make_parser():
         choices=[ 'prepro','train','gtrain','rpredict', 'deploy_model'],
         help='Execution mode. ')
     
+    #TOOO: enable to  get from api request
     parser.add_argument(
         '-cs','--config_source',
         type=str, 
