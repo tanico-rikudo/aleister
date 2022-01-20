@@ -26,10 +26,14 @@ services:
       context: .
       dockerfile: ml_dockerfile
     volumes:
-      - ${BASE_DIR}:/root/src
+      - ${HOST_BASE_DIR}/kuloko:/root/src/kuloko
+      - ${HOST_BASE_DIR}/aleister:/root/src/aleister
+      - ${HOST_BASE_DIR}/geco_commons:/root/src/geco_commons
     working_dir: /root/src
     environment:
       HOME: ${ALEISTER_DIR}
+    env_file:
+      .env
     tty: true
 
   aleister_mlflow:
@@ -38,7 +42,7 @@ services:
       context: .
       dockerfile: mlflow_dockerfile
     volumes:
-      - ${BASE_DIR}/mlflow/mlruns:/root/mlflow
+      - ${HOST_BASE_DIR}/mlflow/mlruns:/root/mlflow
     working_dir: /root/src
     depends_on:
       - aleister_python
@@ -46,5 +50,7 @@ services:
       - "5000:5000"
     environment:
       HOME: ${BASE_DIR}
+    env_file:
+      .env
     command: mlflow server --backend-store-uri ${BASE_DIR}/mlflow/mlruns --default-artifact-root ${BASE_DIR}/mlflow/mlruns --host 0.0.0.0 --port 5000
     restart: always
