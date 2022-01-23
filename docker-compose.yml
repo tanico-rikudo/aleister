@@ -1,0 +1,59 @@
+version: "3"
+services:  
+  aleister_db:
+    container_name: aleister_db
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      - MYSQL_DATABASE=analysis_db
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_USER=docker
+      - MYSQL_PASSWORD=docker
+      - TZ=Asia/Tokyo
+    image: mysql:8.0
+    platform: linux/x86_64
+    ports:
+      - "12306:12306"
+    restart: always
+    depends_on:
+      - aleister_mlflow
+    volumes:
+      - ./db/data:/var/lib/mysql
+      - ./etc/my.cnf:/etc/mysql/conf.d/my.cnf
+
+  aleister_python:
+    container_name: aleister_python
+    build:
+      context: .
+      dockerfile: ml_dockerfile
+    volumes:
+      - ${HOST_BASE_DIR}/kuloko:/root/src/kuloko
+      - ${HOST_BASE_DIR}/aleister:/root/src/aleister
+      - ${HOST_BASE_DIR}/geco_commons:/root/src/geco_commons
+    working_dir: /root/src
+    environment:
+      HOME: ${ALEISTER_DIR}
+    env_file:
+      .env
+    tty: true
+
+  aleister_mlflow:
+    container_name: aleister_mlflow
+    build:
+      context: .
+      dockerfile: mlflow_dockerfile
+    volumes:
+      - ${HOST_BASE_DIR}/geco_commons/mlflow/mlruns:/root/mlflow
+    working_dir: /root/src
+    depends_on:
+      - aleister_python
+    ports:
+      - "5000:5000"
+    environment:
+      HOME: ${BASE_DIR}
+    env_file:
+      .env
+    command: mlflow server --backend-store-uri ${BASE_DIR}/mlflow/mlruns --default-artifact-root ${BASE_DIR}/mlflow/mlruns --host 0.0.0.0 --port 5000
+    restart: always
+    # networks:
+    #   - default
+    #   - shared-network
