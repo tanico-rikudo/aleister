@@ -7,7 +7,7 @@ RUN apt-get -y install locales && \
 ENV LANG ja_JP.UTF-8
 ENV LANGUAGE ja_JP:ja
 ENV LC_ALL ja_JP.UTF-8
-ENV TZ JST-9
+ENV TZ="Asia/Tokyo"
 ENV TERM xterm
 
 RUN mkdir -p /root/src
