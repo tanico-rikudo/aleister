@@ -13,15 +13,15 @@ class DataGen:
     def __init__(self, config, logger):
         self.hd = hist_data.histData()
         self.mqserver_host = config.get("MQ_HOST")
-        self.mqname = config.get("MQ_NAME")
-        self.routing_key = config.get("MQ_ROUTING")
+        self.mqname = config.get("HISTORICAL_MQ_NAME")
+        self.routing_key = config.get("HISTORICAL_MQ_ROUTING")
         self.logger = logger
         
     def init_mqclient(self):
-        self.mq_rpc_client = RpcClient(self.mqserver_host,self.routing_key, self.logger)
+        self.mq_rpc_client = RpcClient(self.mqserver_host, self.mqname, self.routing_key, self.logger)
         
     def get_hist_data(self, remote, ch, sym, sd, ed):
-        if remote 
+        if remote:
             command = ch, sym, sd, ed # todo
             try:
                 hist_data = self.mq_rpc_client.call(command)
@@ -30,6 +30,7 @@ class DataGen:
                 self.logger.warning(f"[Failure] Cannot fetch Feed from server.:{e}")
         else:
             #todo:
+            pass
             
         return hist_data
             
