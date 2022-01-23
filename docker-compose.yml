@@ -42,7 +42,7 @@ services:
       context: .
       dockerfile: mlflow_dockerfile
     volumes:
-      - ${HOST_BASE_DIR}/mlflow/mlruns:/root/mlflow
+      - ${HOST_BASE_DIR}/geco_commons/mlflow/mlruns:/root/mlflow
     working_dir: /root/src
     depends_on:
       - aleister_python
