@@ -11,7 +11,7 @@ VOLATILITY_DAYS = 1
 VOID_ALLOWANCE_RATIO = 1
 class DataGen:
     def __init__(self, config, logger):
-        self.hd = hist_data.histData()
+        self.hd = hist_data.histData(general_config_mode, private_api_mode)
         self.mqserver_host = config.get("MQ_HOST")
         self.mqname = config.get("HISTORICAL_MQ_NAME")
         self.routing_key = config.get("HISTORICAL_MQ_ROUTING")

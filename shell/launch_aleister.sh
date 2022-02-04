@@ -17,6 +17,8 @@ Options:
   -s   symbol
   -i   model id
   -m   model name
+  -g   general config mode
+  -a   private api mode
 _EOT_
 exit 1
 }
@@ -27,7 +29,7 @@ CONFIGMODE=default
 
 
 if [ "$OPTIND" = 1 ]; then
-  while getopts e:u:s:i:m:h OPT
+  while getopts e:u:s:i:m:g:a:h OPT
   do
     case $OPT in
       e)
@@ -44,6 +46,12 @@ if [ "$OPTIND" = 1 ]; then
         ;;
       m)
         MODEL=$OPTARG
+        ;;
+      g)
+        gcm=$OPTARG
+        ;;
+      a)
+        pam=$OPTARG
         ;;
       h)
         usage
@@ -86,7 +94,11 @@ python_interpritor=python
 execute_path=`dirname $(pwd)`
 execute_path="${execute_path}/src"
 cd ${execute_path}
-command="${python_interpritor} master.py -u ${USER} -s ${SOURCE} -sym ${SYMBOL} -mode ${MODE} -cs ${CONFIGSOURCE} -cm ${CONFIGMODE} -id ${ID} -mn ${MODEL} "
+command="${python_interpritor} master.py -u ${USER} -s ${SOURCE} -sym ${SYMBOL} -mode ${MODE} -cs ${CONFIGSOURCE} -id ${ID} -mn ${MODEL} "
+# general config
+command="${command} --general_config_mode ${gcm}"
+# private api
+command="${command} --private_api_mode ${pam}"
 command="${command} ${train_period_opt} ${valid_period_opt} ${test_period_opt} " 
 echo $command
 eval $command

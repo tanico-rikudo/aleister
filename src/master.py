@@ -34,12 +34,15 @@ class OperateMaster:
         self.fp = None
         self.le = None
         self._id =None
-        self.config_mode =  None
+        self.general_config_mode =  None
+        self.private_api_mode =  None
         
-    def load_meta(self, _id, model_name,  config_mode):
+        
+    def load_meta(self, _id, model_name,  general_config_mode,private_api_mode):
         self.id = _id
         self.model_name = model_name
-        self.config_mode = config_mode
+        self.general_config_mode = general_config_mode
+        self.private_api_mode = private_api_mode
     
     def init_mlflow(self):
         self.mlwriter = MlflowWriter(self.le._logger,self.mlflow_client_kwargs)
@@ -48,14 +51,14 @@ class OperateMaster:
         
     def init_prepro(self):
         self.fp = featurePreprocess(self.id)
-        self.fp.load_general_config(source="ini", path=None,mode=self.config_mode)
+        self.fp.load_general_config(source="ini", path=None,mode=self.general_config_mode)
         self.fp.load_model_config(source="ini", path=None, model_name=self.model_name)
 
     def init_learning(self):
         self.le = LearningEvaluator(self.id, self.model_name)
         self.init_mlflow()
         self.le.get_device()
-        self.le.load_general_config(source="ini", path=None,mode=self.config_mode)
+        self.le.load_general_config(source="ini", path=None,mode=self.general_config_mode)
         
     def init_dataGen(self, remote=False):
         self.dg =  DataGen(self.fp.general_config, self.fp._logger)
@@ -321,11 +324,19 @@ def make_parser():
         help='Where is ini file.')
 
     parser.add_argument(
-        '-cm','--config_mode',
-        type=str, 
-        default= 'default',
-        choices=['default', 'dev'],
-        help='Config mode')
+        "-gcm",
+        "--general_config_mode",
+        type=str,
+        required=True,
+        help="Select general config mode",
+    )
+    parser.add_argument(
+        "-pam",
+        "--private_api_mode",
+        type=str,
+        required=True,
+        help="Select private api mode",
+    )
     
     parser.add_argument(
         '-id','--model_id',
@@ -377,11 +388,13 @@ def main(args=None):
 
     #meta
     _id = arg_dict["model_id"]
-    config_mode = arg_dict["config_mode"].upper()
+    general_config_mode = arg_dict["general_config_mode"].upper()
+    private_api_mode = arg_dict["private_api_mode"].upper()
+    
     model_name = arg_dict["model_name"].upper()
     
     om = OperateMaster()
-    om.load_meta(_id, model_name,  config_mode )
+    om.load_meta(_id, model_name,  general_config_mode, private_api_mode )
     om.init_prepro()
 
     # sym
