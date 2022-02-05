@@ -38,7 +38,7 @@ class OperateMaster:
         self.private_api_mode =  None
         
         
-    def load_meta(self, _id, model_name,  general_config_mode,private_api_mode):
+    def load_meta(self, _id, model_name, sym, general_config_mode,private_api_mode):
         self.id = _id
         self.model_name = model_name
         self.general_config_mode = general_config_mode
@@ -61,7 +61,7 @@ class OperateMaster:
         self.le.load_general_config(source="ini", path=None,mode=self.general_config_mode)
         
     def init_dataGen(self, remote=False):
-        self.dg =  DataGen(self.fp.general_config, self.fp._logger)
+        self.dg =  DataGen(self.fp.sym, self.fp.general_config_mode, self.fp.private_api_mode, self.fp._logger)
         if remote:
             self.dg.init_mqclient()
 
@@ -390,15 +390,13 @@ def main(args=None):
     _id = arg_dict["model_id"]
     general_config_mode = arg_dict["general_config_mode"].upper()
     private_api_mode = arg_dict["private_api_mode"].upper()
+    sym = arg_dict["symbol"] 
     
     model_name = arg_dict["model_name"].upper()
     
     om = OperateMaster()
-    om.load_meta(_id, model_name,  general_config_mode, private_api_mode )
+    om.load_meta(_id, model_name,  sym, general_config_mode, private_api_mode )
     om.init_prepro()
-
-    # sym
-    sym = arg_dict["symbol"] 
     
     #mlflow
     mlflow_tags = {
