@@ -1,38 +1,40 @@
-import  os
+import os
 import torch
 import mlflow
-mlflow.set_registry_uri(os.environ['MLFLOW_TRACKING_URI'] )
-mlflow.set_tracking_uri(os.environ['MLFLOW_ARTIFACTS_URI'] )
+
+mlflow.set_registry_uri(os.environ['MLFLOW_TRACKING_URI'])
+mlflow.set_tracking_uri(os.environ['MLFLOW_ARTIFACTS_URI'])
 from mlflow.tracking import MlflowClient
-from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME,MLFLOW_USER,MLFLOW_SOURCE_NAME
-    
-    
+from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME, MLFLOW_USER, MLFLOW_SOURCE_NAME
+
+
 class MlflowWriter():
     """
     MLflow tracking wrapper
     """
 
-    def __init__(self,logger, kwargs):
+    def __init__(self, logger, kwargs):
         self.client = MlflowClient(**kwargs)
         self._logger = logger
-        
+
     def build_mlflow_tags(self, tag):
-        tag[MLFLOW_RUN_NAME]  = dt.now().strftime("%Y%m%d%H%M%s") if tag[MLFLOW_RUN_NAME] is None else tag[MLFLOW_RUN_NAME]
-        tag[MLFLOW_USER]  = 'ANONYMOUS' if tag[MLFLOW_USER] is None else tag[MLFLOW_USER]
-        tag[MLFLOW_SOURCE_NAME]  = 'PYTHON' if tag[MLFLOW_SOURCE_NAME]  is None else tag[MLFLOW_SOURCE_NAME]
-        return  tag
-        
+        tag[MLFLOW_RUN_NAME] = dt.now().strftime("%Y%m%d%H%M%s") if tag[MLFLOW_RUN_NAME] is None else tag[
+            MLFLOW_RUN_NAME]
+        tag[MLFLOW_USER] = 'ANONYMOUS' if tag[MLFLOW_USER] is None else tag[MLFLOW_USER]
+        tag[MLFLOW_SOURCE_NAME] = 'PYTHON' if tag[MLFLOW_SOURCE_NAME] is None else tag[MLFLOW_SOURCE_NAME]
+        return tag
+
     def create_experiment(self, experiment_name, run_tags):
         self.get_experiment_id(experiment_name)
-        self.run_id = self.client.create_run(self.experiment_id,tags=run_tags).info.run_id
+        self.run_id = self.client.create_run(self.experiment_id, tags=run_tags).info.run_id
         self.experiment = self.client.get_experiment(self.experiment_id)
         self._logger.info(f"New run started: {run_tags[MLFLOW_RUN_NAME]}")
         self._logger.info(f"Experiment Name: {self.experiment.name}")
         self._logger.info(f"Experiment id: {self.experiment.experiment_id}")
         self._logger.info(f"Artifact Location: {self.experiment.artifact_location}")
         self._logger.info("[DONE] Set up MLflow tracking")
-        
-    def get_experiment_id(self,experiment_name):
+
+    def get_experiment_id(self, experiment_name):
         try:
             self.experiment_id = self.client.create_experiment(experiment_name)
             self._logger.info(f"[DONE] Create  New experiment. ID={self.experiment_id}")
@@ -40,7 +42,7 @@ class MlflowWriter():
             self.experiment_id = self.client.get_experiment_by_name(experiment_name).experiment_id
             self._logger.info(f"[DONE] Get experiment. ID={self.experiment_id}")
         return self.experiment_id
-        
+
     def register_model(self, model_name):
         """
         Register model into model  registory
@@ -52,19 +54,18 @@ class MlflowWriter():
         except Exception as e:
             self._logger.warning("[Failure] Cannot regist model. Name=f'{model_name}'. :{e}")
         pass
-        
+
     def print_registered_model_info(self, rm):
         s = f"name: {rm.name}, \
             tags: {rm.tags}, \
             description: {rm.description}"
         print(s)
-        return  s
+        return s
 
-        
     def create_model_version(self, model_name, experiment_id=None, run_id=None, desc=""):
         experiment_id = experiment_id if experiment_id is not None else self.experiment_id
         run_id = run_id if run_id is not None else self.run_id
-        
+
         experiment = self.client.get_experiment(experiment_id)
         mv = self.client.create_model_version(
             name=model_name,
@@ -79,19 +80,18 @@ class MlflowWriter():
         self._logger.info("Status: {}".format(mv.status))
         self._logger.info("Stage: {}".format(mv.current_stage))
         return mv
-        
+
     def deploy_model_to_production(self, model_name, version):
         self.client.transition_model_version_stage(
             name=model_name,
             version=version,
             stage="production"
         )
-        
+
     def search_staged_models(self, model_name):
-        mvs  = self.client.search_model_versions("name='"+model_name+"'")
+        mvs = self.client.search_model_versions("name='" + model_name + "'")
         return mvs
 
-        
     def log_params_from_omegaconf_dict(self, params):
         for param_name, element in params.items():
             self._explore_recursive(param_name, element)
@@ -124,4 +124,3 @@ class MlflowWriter():
 
     def set_terminated(self):
         self.client.set_terminated(self.run_id)
-       
