@@ -13,13 +13,16 @@ ENV TERM xterm
 # Metwork
 RUN apt-get install -y dnsutils iproute2 iputils-ping curl
 
+# python
 RUN apt install -y software-properties-common
 RUN add-apt-repository ppa:deadsnakes/ppa
 RUN apt-get install -y python3.7
 RUN ln -s /usr/bin/python3.7 /usr/bin/python
 RUN ln -s /usr/bin/python3.7 /usr/bin/python3 -f
 
-
+RUN mkdir -p /data
+RUN mkdir -p /data/model
+RUN mkdir -p /data/mlflow
 RUN mkdir -p /root/src
 COPY requirements.txt /root/src
 WORKDIR /root/src

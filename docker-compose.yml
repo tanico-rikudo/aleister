@@ -17,7 +17,7 @@ services:
     depends_on:
       - aleister_mlflow
     volumes:
-      - ./db/data:/var/lib/mysql
+      - ${HOST_DATA_BASE_DIR}/aleister_db:/var/lib/mysql
       - ./etc/my.cnf:/etc/mysql/conf.d/my.cnf
     networks:
       shared-nw:
@@ -32,11 +32,12 @@ services:
       - ${HOST_BASE_DIR}/kuloko:/root/src/kuloko
       - ${HOST_BASE_DIR}/aleister:/root/src/aleister
       - ${HOST_BASE_DIR}/geco_commons:/root/src/geco_commons
+      - ${HOST_DATA_BASE_DIR}:/data
     working_dir: /root/src
     environment:
       HOME: ${ALEISTER_DIR}
     ports:
-      - 9898:9898
+      - 9899:9898
     expose:
       - 9898
     env_file: .env
@@ -52,7 +53,7 @@ services:
       context: .
       dockerfile: mlflow_dockerfile
     volumes:
-      - ${HOST_BASE_DIR}/geco_commons/mlflow/mlruns:/root/mlflow
+      - ${HOST_DATA_BASE_DIR}/mlflow:/data/mlflow
     working_dir: /root/src
     depends_on:
       - aleister_python
@@ -61,7 +62,7 @@ services:
     environment:
       HOME: ${BASE_DIR}
     env_file: .env
-    command: mlflow server --backend-store-uri ${BASE_DIR}/mlflow/mlruns --default-artifact-root ${BASE_DIR}/mlflow/mlruns --host 0.0.0.0 --port 5000
+    command: mlflow server --backend-store-uri /data/mlflow/mlruns --default-artifact-root /data/mlflow/mlruns --host 0.0.0.0 --port 5000
     restart: always
     networks:
       shared-nw:
