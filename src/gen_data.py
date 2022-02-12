@@ -1,4 +1,5 @@
 import hist_data
+import json 
 import pandas as pd
 import numpy as np
 import sys, os
@@ -16,28 +17,44 @@ VOID_ALLOWANCE_RATIO = 1
 class DataGen:
     def __init__(self, symbol, general_config_mode, private_api_mode, logger):
         self.hd = hist_data.histData(symbol, general_config_mode, private_api_mode)
-        self.mqserver_host = self.hd.general_config.get("MQ_HOST")
-        self.mqname = self.hd.general_config.get("HISTORICAL_MQ_NAME")
-        self.routing_key = self.hd.general_config.get("HISTORICAL_MQ_ROUTING")
         self.logger = logger
+        self.mq_settings = load_mq_settings(self.hd.general_config)
+        self.init_mqclient()
+
 
     def init_mqclient(self):
-        self.mq_rpc_client = RpcClient(self.mqserver_host, self.mqname, self.routing_key, self.logger)
+        self.remote = False if self.mq_settings["mqserver_host"] is None else True
+        self.mq_rpc_client = {}
+        if self.remote:
+            for name in ["historical","realtime"]:
+                self.mq_rpc_client[name] = \
+                    RpcClient(self.mq_settings["mqserver_host"],
+                            self.mq_settings["mqname"][name], 
+                            self.mq_settings["routing_key"][name],
+                            self.logger)
 
-    def get_hist_data(self, remote, ch, sym, sd, ed):
+                self.logger.info(f"[DONE] Set MQ client. Name={name}")
+        else:
+            self.logger.info(f"[Skip] Set MQ client.") 
+            
+    def get_hist_data(self, ch, sym, sd, ed, remote=None):
+        remote = self.remote if remote is None else remote
         if remote:
             command = {"ch":ch, "sym":sym, "sd":sd, "ed":ed }
             try:
-                hist_data = self.mq_rpc_client.call(command)
+                hist_data = self.mq_rpc_client["historical"].call(command)
+                self.logger.debug(f"[DONE] Fetch hist Feed from server. command={command}")
+                hist_data = json.loads(hist_data.decode())
+                hist_data = pd.json_normalize(hist_data)
             except Exception as e:
                 hist_data = None
-                self.logger.warning(f"[Failure] Cannot fetch Feed from server.:{e}")
+                self.logger.warning(f"[Failure] Cannot fetch hist Feed from server. command={command}, e={e}",exc_info=True)
         else:
             try:
                 hist_data = self.hd.get_data(**command)
             except Exception as e:
                 hist_data = None
-                self.logger.warning(f"[Failure] Cannot fetch Feed.:{e}")
+                self.logger.warning(f"[Failure] Cannot fetch Feed.:{e}",exc_info=True)
 
         return hist_data
 
@@ -45,7 +62,7 @@ class DataGen:
 
     def fetch_realdata(self):
         try:
-            realtime_data = self.mq_rpc_client.call()
+            realtime_data = self.mq_rpc_client["realtime"].call()
         except Exception as e:
             realtime_data = None
             self.logger.warning(f"[Failure] Cannot fetch Feed from server.:{e}")

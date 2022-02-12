@@ -106,6 +106,7 @@ class OperateMaster:
                          _date is not None])
         trades = self.dg.get_hist_data(ch="trades", sym=sym, sd=fetch_start, ed=fetch_end)
         orderbooks = self.dg.get_hist_data(ch="trades", sym=sym, sd=fetch_start, ed=fetch_end)
+        print(trades)
         Xy = self.dg.get_Xy(trades, orderbooks)
         self.fp._logger.info("[DONE] Get prepro raw data. {0}~{1}".format(fetch_start, fetch_end))
 
