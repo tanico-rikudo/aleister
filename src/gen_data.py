@@ -43,9 +43,8 @@ class DataGen:
             command = {"ch":ch, "sym":sym, "sd":sd, "ed":ed }
             try:
                 hist_data = self.mq_rpc_client["historical"].call(command)
-                self.logger.debug(f"[DONE] Fetch hist Feed from server. command={command}")
-                hist_data = json.loads(hist_data.decode())
-                hist_data = pd.json_normalize(hist_data)
+                self.logger.debug(f"[DONE] Fetch hist Feed from server. command={command}")                
+                hist_data = pd.read_json(hist_data.decode()).set_index("timestamp")
             except Exception as e:
                 hist_data = None
                 self.logger.warning(f"[Failure] Cannot fetch hist Feed from server. command={command}, e={e}",exc_info=True)
