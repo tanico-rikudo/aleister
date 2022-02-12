@@ -251,6 +251,7 @@ class OperateMaster:
         )
         if len(best_runs) == 0:
             self.le._logger.info(f"[END] No runs. Experiment Name={self.id}, Id={experiment_id}")
+            return
         else:
             best_run = best_runs[0]
 

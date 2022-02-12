@@ -52,7 +52,7 @@ class MlflowWriter():
         try:
             self.client.create_registered_model(model_name)
         except Exception as e:
-            self._logger.warning("[Failure] Cannot regist model. Name=f'{model_name}'. :{e}")
+            self._logger.warning(f"[Failure] Cannot regist model. Name:{model_name}. :{e}", exc_info=True)
         pass
 
     def print_registered_model_info(self, rm):
