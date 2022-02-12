@@ -16,9 +16,9 @@ VOID_ALLOWANCE_RATIO = 1
 class DataGen:
     def __init__(self, symbol, general_config_mode, private_api_mode, logger):
         self.hd = hist_data.histData(symbol, general_config_mode, private_api_mode)
-        self.mqserver_host = config.get("MQ_HOST")
-        self.mqname = config.get("HISTORICAL_MQ_NAME")
-        self.routing_key = config.get("HISTORICAL_MQ_ROUTING")
+        self.mqserver_host = self.hd.general_config.get("MQ_HOST")
+        self.mqname = self.hd.general_config.get("HISTORICAL_MQ_NAME")
+        self.routing_key = self.hd.general_config.get("HISTORICAL_MQ_ROUTING")
         self.logger = logger
 
     def init_mqclient(self):
@@ -26,15 +26,18 @@ class DataGen:
 
     def get_hist_data(self, remote, ch, sym, sd, ed):
         if remote:
-            command = ch, sym, sd, ed  # todo
+            command = {"ch":ch, "sym":sym, "sd":sd, "ed":ed }
             try:
                 hist_data = self.mq_rpc_client.call(command)
             except Exception as e:
                 hist_data = None
                 self.logger.warning(f"[Failure] Cannot fetch Feed from server.:{e}")
         else:
-            # todo:
-            pass
+            try:
+                hist_data = self.hd.get_data(**command)
+            except Exception as e:
+                hist_data = None
+                self.logger.warning(f"[Failure] Cannot fetch Feed.:{e}")
 
         return hist_data
 

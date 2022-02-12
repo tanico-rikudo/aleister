@@ -40,6 +40,7 @@ class OperateMaster:
 
     def load_meta(self, _id, model_name, sym, general_config_mode, private_api_mode):
         self.id = _id
+        self.sym = sym
         self.model_name = model_name
         self.general_config_mode = general_config_mode
         self.private_api_mode = private_api_mode
@@ -61,7 +62,7 @@ class OperateMaster:
         self.le.load_general_config(source="ini", path=None, mode=self.general_config_mode)
 
     def init_dataGen(self, remote=False):
-        self.dg = DataGen(self.fp.sym, self.fp.general_config_mode, self.fp.private_api_mode, self.fp._logger)
+        self.dg = DataGen(self.sym, self.general_config_mode, self.private_api_mode, self.fp._logger)
         if remote:
             self.dg.init_mqclient()
 
