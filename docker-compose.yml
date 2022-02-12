@@ -62,7 +62,7 @@ services:
     environment:
       HOME: ${BASE_DIR}
     env_file: .env
-    command: mlflow server --backend-store-uri /data/mlflow/mlruns --default-artifact-root /data/mlflow/mlruns --host 0.0.0.0 --port 5000
+    command: mlflow server --backend-store-uri sqlite:////data/mlflow/mlruns.db --default-artifact-root /data/mlflow/mlruns --host 0.0.0.0 --port 5000
     restart: always
     networks:
       shared-nw:
