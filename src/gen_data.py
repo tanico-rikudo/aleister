@@ -1,5 +1,5 @@
 import hist_data
-import json 
+import json
 import pandas as pd
 import numpy as np
 import sys, os
@@ -21,39 +21,39 @@ class DataGen:
         self.mq_settings = load_mq_settings(self.hd.general_config)
         self.init_mqclient()
 
-
     def init_mqclient(self):
         self.remote = False if self.mq_settings["mqserver_host"] is None else True
         self.mq_rpc_client = {}
         if self.remote:
-            for name in ["historical","realtime"]:
+            for name in ["historical", "realtime"]:
                 self.mq_rpc_client[name] = \
                     RpcClient(self.mq_settings["mqserver_host"],
-                            self.mq_settings["mqname"][name], 
-                            self.mq_settings["routing_key"][name],
-                            self.logger)
+                              self.mq_settings["mqname"][name],
+                              self.mq_settings["routing_key"][name],
+                              self.logger)
 
                 self.logger.info(f"[DONE] Set MQ client. Name={name}")
         else:
-            self.logger.info(f"[Skip] Set MQ client.") 
-            
+            self.logger.info(f"[Skip] Set MQ client.")
+
     def get_hist_data(self, ch, sym, sd, ed, remote=None):
         remote = self.remote if remote is None else remote
+        command = {"ch": ch, "sym": sym, "sd": sd, "ed": ed}
         if remote:
-            command = {"ch":ch, "sym":sym, "sd":sd, "ed":ed }
             try:
                 hist_data = self.mq_rpc_client["historical"].call(command)
-                self.logger.debug(f"[DONE] Fetch hist Feed from server. command={command}")                
+                self.logger.debug(f"[DONE] Fetch hist Feed from server. command={command}")
                 hist_data = pd.read_json(hist_data.decode()).set_index("timestamp")
             except Exception as e:
                 hist_data = None
-                self.logger.warning(f"[Failure] Cannot fetch hist Feed from server. command={command}, e={e}",exc_info=True)
+                self.logger.warning(f"[Failure] Cannot fetch hist Feed from server. command={command}, e={e}",
+                                    exc_info=True)
         else:
             try:
                 hist_data = self.hd.get_data(**command)
             except Exception as e:
                 hist_data = None
-                self.logger.warning(f"[Failure] Cannot fetch Feed.:{e}",exc_info=True)
+                self.logger.warning(f"[Failure] Cannot fetch Feed.:{e}", exc_info=True)
 
         return hist_data
 
@@ -61,12 +61,25 @@ class DataGen:
 
     def fetch_realdata(self):
         try:
-            realtime_data = self.mq_rpc_client["realtime"].call()
+            command = ""
+            realtime_data = self.mq_rpc_client["realtime"].call(command)
         except Exception as e:
             realtime_data = None
-            self.logger.warning(f"[Failure] Cannot fetch Feed from server.:{e}")
+            self.logger.warning(f"[Failure] Cannot fetch Feed from server.:{e}", exc_info=True)
 
         #  separate datas
+        json_rst = json.loads(realtime_data)
+        dfs = {}
+        for _key in json_rst.keys():
+            try:
+                df = pd.DataFrame(_key)
+                df["datetime"] = df["time"].apply(lambda x: dl.strYMDHMSF_to_dt(x))
+                del df["time"]
+                df.set_index("datetime", inplace=True)
+                dfs[_key] = df
+            except Exception as e:
+                self.logger.warning(f"[Failure] Cannot load data. Key={_key}:{e}")
+        return dfs
 
     #### Convert data ###
     def get_ohlcv(self, trades):
@@ -83,12 +96,17 @@ class DataGen:
             [type]: [description]
         """
         # trade based data
-        buy_size = trades.loc[trades.loc[:, "side"] == "BUY", ["size"]].resample('T', label='left',
-                                                                                 closed='left').sum().fillna(0).rename(
-            columns={"size": "buy_size"})
-        sell_size = trades.loc[trades.loc[:, "side"] == "SELL", ["size"]].resample('T', label='left',
-                                                                                   closed='left').sum().fillna(
-            0).rename(columns={"size": "sell_size"})
+        buy_size = trades.loc[trades.loc[:, "side"] == "BUY", ["size"]] \
+            .resample('T', label='left', closed='left') \
+            .sum() \
+            .fillna(0) \
+            .rename(columns={"size": "buy_size"})
+        sell_size = trades.loc[trades.loc[:, "side"] == "SELL", ["size"]] \
+            .resample('T', label='left', closed='left') \
+            .sum() \
+            .fillna(0) \
+            .rename(columns={"size": "sell_size"})
+
         ohlcv = self.get_ohlcv(trades)
         mtrades = pd.concat([ohlcv, buy_size, sell_size], axis=1)
         mtrades.loc[:, ["buy_size", "sell_size"]] = mtrades.loc[:, ["buy_size", "sell_size"]].fillna(0)
@@ -103,9 +121,10 @@ class DataGen:
         ls_last_relative_target_cols = ["open", "high", "low", "close", "size"]
         ls_last_relative_cols = ["rel_" + _col for _col in ls_last_relative_target_cols]
         convert_dict = {_before: _after for _before, _after in zip(ls_last_relative_target_cols, ls_last_relative_cols)}
-        relative_values = np.log10(mtrades.loc[:, ls_last_relative_target_cols] / mtrades.last("T").loc[:,
-                                                                                  ls_last_relative_target_cols].values).rename(
-            columns=convert_dict)
+        relative_values = \
+            np.log10(mtrades.loc[:, ls_last_relative_target_cols] / mtrades.last("T").loc[:,
+                                                                    ls_last_relative_target_cols].values) \
+                .rename(columns=convert_dict)
 
         relative_values.replace([np.inf, -np.inf], np.nan, inplace=True)
         relative_values.fillna(0, inplace=True)
@@ -118,11 +137,12 @@ class DataGen:
         mtrades.loc[:, "volatility"].fillna(method="ffill", inplace=True)
         mtrades.loc[:, "price_chg_allowamce"] = mtrades.open * mtrades.volatility * 0.01 * VOID_ALLOWANCE_RATIO
 
+        # Define return cols
         return_cols = ls_last_relative_cols + ["buy_size_ratio", "sell_size_ratio"]
 
         if mode == 'train':
             # Create answer
-            mtrades['open30Mafter'] = mtrades['open'].shift(-30)
+            mtrades['open30Mafter'] = mtrades['open'].shift(-30)  # TODO: go outside
             mtrades.loc[(mtrades['open30Mafter'] - mtrades['open']) > 0, 'movingBinary'] = 1
             mtrades.loc[(mtrades['open30Mafter'] - mtrades['open']) == 0, 'movingBinary'] = 0
             mtrades.loc[(mtrades['open30Mafter'] - mtrades['open']) < 0, 'movingBinary'] = -1

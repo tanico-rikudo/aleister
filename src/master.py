@@ -73,10 +73,13 @@ class OperateMaster:
     def update_mlflow_tags(self, key, val):
         self.mlflow_tags[key] = val
 
-    def realtime_preprocessing(general_config, logger, scaler):
-        # get data vim mq
-        datas = self.dg.fetch_realdata()
+    def realtime_preprocessing(self, general_config, logger, scaler):
 
+        
+        # Fetch real data vim mq
+        datas = self.dg.fetch_realdata()
+        trades = datas["trade"]
+        orderbooks = datas["orderbook"]
         self.fp._logger.info("[DONE] Get prepro raw data")
 
         # prepro
@@ -86,14 +89,19 @@ class OperateMaster:
 
         return X
 
-    def predict(self, sym):
+    def realtime_predict(self):
         scaler = self.fp.load_numpy_datas(["x_scaler"])
-        X = realtime_preprocessing(fp.general_config, self.fp._logger, scaler)
+        
+        # Fetch all hist
+        # TODO
+        # Fetch real data vim mq
+        # TODO
+        X = self.realtime_preprocessing(self.fp.general_config, self.fp._logger, scaler)
 
         # todo: mode conider
         uri = self.load_prod_model()
         self.le.load_mlflow_model(uri)
-        prediction = self.le.prediction(x)
+        prediction = self.le.prediction(X)
         # todo: save somwwhre
         return prediction
 
@@ -434,7 +442,7 @@ def main(args=None):
             om.deploy_best_model()
         elif arg_dict["execute_mode"] == "rpredict":
             om.init_dataGen(remote=True)
-            om.predict()
+            om.realtime_predict()
 
 
 if __name__ == "__main__":
