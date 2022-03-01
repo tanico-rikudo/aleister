@@ -10,15 +10,15 @@ from torch.nn.utils.rnn import pad_packed_sequence as unpack
 
 
 class Attentive_Pooling(nn.Module):
-    def __init__(self, hidden_size):
+    def __init__(self, hidden_dim):
         """
 
-        :param hidden_size:
+        :param hidden_dim:
         """
         super(Attentive_Pooling, self).__init__()
-        self.w_1 = nn.Linear(hidden_size, hidden_size)
-        self.w_2 = nn.Linear(hidden_size, hidden_size)
-        self.u = nn.Linear(hidden_size, 1, bias=False)
+        self.w_1 = nn.Linear(hidden_dim, hidden_dim)
+        self.w_2 = nn.Linear(hidden_dim, hidden_dim)
+        self.u = nn.Linear(hidden_dim, 1, bias=False)
 
     def forward(self, memory, query=None, mask=None):
         '''
@@ -81,23 +81,23 @@ class RGCN(nn.Module):
 
 
 class SLSTMCell(nn.Module):
-    def __init__(self, input_size, hidden_size, relation_num, dropout):
+    def __init__(self, input_size, hidden_dim, relation_num, dropout):
         """
 
         :param input_size:
-        :param hidden_size:
+        :param hidden_dim:
         :param relation_num:
         :param dropout:
         """
         super(SLSTMCell, self).__init__()
-        self.hidden_size = hidden_size
+        self.hidden_dim = hidden_dim
         self.dropout = torch.nn.Dropout(dropout)
-        self.Wh = nn.Linear(hidden_size, hidden_size * 5, bias=False)
-        self.Wn = nn.Linear(hidden_size, hidden_size * 5, bias=False)
-        self.Wt = nn.Linear(hidden_size, hidden_size * 5, bias=False)
-        self.U = nn.Linear(input_size, hidden_size * 5, bias=False)
-        self.V = nn.Linear(hidden_size, hidden_size * 5)
-        self.rgcn = RGCN(hidden_size, hidden_size, relation_num)
+        self.Wh = nn.Linear(hidden_dim, hidden_dim * 5, bias=False)
+        self.Wn = nn.Linear(hidden_dim, hidden_dim * 5, bias=False)
+        self.Wt = nn.Linear(hidden_dim, hidden_dim * 5, bias=False)
+        self.U = nn.Linear(input_size, hidden_dim * 5, bias=False)
+        self.V = nn.Linear(hidden_dim, hidden_dim * 5)
+        self.rgcn = RGCN(hidden_dim, hidden_dim, relation_num)
 
     def forward(self, x, h, c, g, h_t, adjs):
         '''
@@ -119,25 +119,25 @@ class SLSTMCell(nn.Module):
         hn = self.rgcn(h, adjs)
         gates = self.Wh(self.dropout(h)) + self.U(self.dropout(x)) + self.Wn(self.dropout(hn)) + self.Wt(
             self.dropout(h_t)) + torch.unsqueeze(self.V(g), 0)
-        i, f, o, u, t = torch.split(gates, self.hidden_size, dim=-1)
+        i, f, o, u, t = torch.split(gates, self.hidden_dim, dim=-1)
         new_c = torch.sigmoid(f) * c + torch.sigmoid(i) * torch.tanh(u) + torch.sigmoid(t) * h_t
         new_h = torch.sigmoid(o) * torch.tanh(new_c)
         return new_h, new_c
 
 
 class GLSTMCell(nn.Module):
-    def __init__(self, hidden_size, attn_pooling):
+    def __init__(self, hidden_dim, attn_pooling):
         """
 
-        :param hidden_size:
+        :param hidden_dim:
         :param attn_pooling:
         """
         super(GLSTMCell, self).__init__()
-        self.hidden_size = hidden_size
-        self.W = nn.Linear(hidden_size, hidden_size * 2, bias=False)
-        self.w = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.U = nn.Linear(hidden_size, hidden_size * 2)
-        self.u = nn.Linear(hidden_size, hidden_size)
+        self.hidden_dim = hidden_dim
+        self.W = nn.Linear(hidden_dim, hidden_dim * 2, bias=False)
+        self.w = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.U = nn.Linear(hidden_dim, hidden_dim * 2)
+        self.u = nn.Linear(hidden_dim, hidden_dim)
         self.attn_pooling = attn_pooling
 
     def forward(self, g, c_g, h, c):
@@ -153,7 +153,7 @@ class GLSTMCell(nn.Module):
         # this can use attentive pooling
         # h_avg = torch.mean(h, 1)
         h_avg = self.attn_pooling(h)
-        f, o = torch.split(torch.sigmoid(self.W(g) + self.U(h_avg)), self.hidden_size, dim=-1)
+        f, o = torch.split(torch.sigmoid(self.W(g) + self.U(h_avg)), self.hidden_dim, dim=-1)
         f_w = torch.sigmoid(torch.unsqueeze(self.w(g), -2) + self.u(h))
         f_w = F.softmax(f_w, -2)
         new_c = f * c_g + torch.sum(c * f_w, -2)
@@ -162,27 +162,26 @@ class GLSTMCell(nn.Module):
 
 
 class CGM(nn.Module):
-    def __init__(self, hidden_size, vol_input_size, price_input_size, seq_dropout_rate, gbl_dropout_rate,
-                 last_dropout_rate, relation_num, output_size, num_layers):
+    def __init__(self, hidden_dim, vol_input_size, price_input_size, seq_dropout_rate, gbl_dropout_rate,
+                 last_dropout_rate, relation_num, output_dim, num_layers):
         super(CGM, self).__init__()
-        self.hidden_size = hidden_size
-        self.emb_size = emb_size
+        self.hidden_dim = hidden_dim
 
-        self.feature_weight_price = nn.Linear(price_input_size, hidden_size)
-        self.feature_weight_volume = nn.Linear(vol_input_size, hidden_size)
-        self.feature_combine = nn.Linear(hidden_size * 4, hidden_size)
+        self.feature_weight_price = nn.Linear(price_input_size, hidden_dim)
+        self.feature_weight_volume = nn.Linear(vol_input_size, hidden_dim)
+        self.feature_combine = nn.Linear(hidden_dim * 4, hidden_dim)
 
-        self.cca_price = nn.Sequential(nn.Linear(hidden_size, hidden_size * 2), nn.ReLU(),
-                                       nn.Linear(hidden_size * 2, hidden_size * 2), nn.ReLU(),
-                                       nn.Linear(hidden_size * 2, hidden_size))
-        self.cca_volume = nn.Sequential(nn.Linear(hidden_size, hidden_size * 2), nn.ReLU(),
-                                        nn.Linear(hidden_size * 2, hidden_size * 2), nn.ReLU(),
-                                        nn.Linear(hidden_size * 2, hidden_size))
+        self.cca_price = nn.Sequential(nn.Linear(hidden_dim, hidden_dim * 2), nn.ReLU(),
+                                       nn.Linear(hidden_dim * 2, hidden_dim * 2), nn.ReLU(),
+                                       nn.Linear(hidden_dim * 2, hidden_dim))
+        self.cca_volume = nn.Sequential(nn.Linear(hidden_dim, hidden_dim * 2), nn.ReLU(),
+                                        nn.Linear(hidden_dim * 2, hidden_dim * 2), nn.ReLU(),
+                                        nn.Linear(hidden_dim * 2, hidden_dim))
 
-        self.attn_pooling = Attentive_Pooling(hidden_size)
-        self.s_cell = SLSTMCell(hidden_size, hidden_size, relation_num, seq_dropout_rate)
-        self.g_cell = GLSTMCell(hidden_size, self.attn_pooling, gbl_dropout_rate)
-        self.w_out = nn.Linear(hidden_size, output_size)
+        self.attn_pooling = Attentive_Pooling(hidden_dim)
+        self.s_cell = SLSTMCell(hidden_dim, hidden_dim, relation_num, seq_dropout_rate)
+        self.g_cell = GLSTMCell(hidden_dim, self.attn_pooling, gbl_dropout_rate)
+        self.w_out = nn.Linear(hidden_dim, output_dim)
         self.num_layers = num_layers
         self.dropout = torch.nn.Dropout(last_dropout_rate)
 
