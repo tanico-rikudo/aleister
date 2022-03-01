@@ -25,6 +25,7 @@ class featurePreprocess(BaseProcess):
 
     def get_dataset_fn(self, dataset_fn_name):
         fns = {
+            "cgm": SequenceDataset,
             "multiseq": SequenceDataset,
             "multi": CustomTensorDataset,
         }

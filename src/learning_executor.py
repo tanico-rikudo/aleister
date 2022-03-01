@@ -68,7 +68,8 @@ class LearningEvaluator(BaseProcess):
     def get_model_instance(self, model_name, model_params):
         models = {
             "sdnn": dnn.SimpleDnn,
-            "slstm": lstm.SimpleLSTM
+            "slstm": lstm.SimpleLSTM,
+            "cgm": cgm.cgm
         }
         self.model = models.get(model_name.lower())(**model_params)
         self._logger.info('[DONE] Load Model Instance.  Stucture params={0}'.format(model_params))
@@ -76,7 +77,8 @@ class LearningEvaluator(BaseProcess):
     def load_model_hparameters(self, model_name, source='ini'):
         hparams = {
             "sdnn": parameter_parser.sdnn,
-            "slstm": parameter_parser.slstm
+            "slstm": parameter_parser.slstm,
+            "cgm":parameter_parser.cgm
         }
         self.hparams = hparams.get(model_name.lower())(self.model_config, source)
         self._logger.info(f'[DONE]Load hyper params. Name={self.model_name}, Source={source}')
