@@ -12,6 +12,9 @@ from sklearn.metrics import accuracy_score
 
 from mlflow_writer import *
 
+from .model import parameter_parser
+from .model import dnn, lstm
+
 from datetime import datetime as dt
 import numpy as np
 import pandas as pd
@@ -21,7 +24,6 @@ from plotly.offline import plot
 import plotly.graph_objects as go
 
 from base_process import BaseProcess
-from model_modules import *
 
 import mlflow
 
@@ -65,16 +67,16 @@ class LearningEvaluator(BaseProcess):
 
     def get_model_instance(self, model_name, model_params):
         models = {
-            "sdnn": SimpleDnn,
-            "slstm": SimpleLSTM
+            "sdnn": dnn.SimpleDnn,
+            "slstm": lstm.SimpleLSTM
         }
         self.model = models.get(model_name.lower())(**model_params)
         self._logger.info('[DONE] Load Model Instance.  Stucture params={0}'.format(model_params))
 
     def load_model_hparameters(self, model_name, source='ini'):
         hparams = {
-            "sdnn": parameterParser.sdnn,
-            "slstm": parameterParser.slstm
+            "sdnn": parameter_parser.sdnn,
+            "slstm": parameter_parser.slstm
         }
         self.hparams = hparams.get(model_name.lower())(self.model_config, source)
         self._logger.info(f'[DONE]Load hyper params. Name={self.model_name}, Source={source}')

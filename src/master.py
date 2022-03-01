@@ -16,7 +16,7 @@ LOGDIR = os.environ['ALEISTER_LOGDIR']
 from gen_data import DataGen
 from feature_preprocess import featurePreprocess
 from learning_executor import LearningEvaluator
-from model_modules import parameterParser as pp
+from model.parameter_parser import parameterParser as pp
 
 sys.path.append(os.environ['COMMON_DIR'])
 from util.config import ConfigManager
