@@ -62,7 +62,7 @@ class OperateMaster:
         self.le.load_general_config(source="ini", path=None, mode=self.general_config_mode)
 
     def init_dataGen(self, remote=False):
-        self.dg = DataGen(self.sym, self.general_config_mode, self.private_api_mode, self.fp._logger)
+        self.dg = DataGen(self.id, self.sym, self.general_config_mode, self.private_api_mode)
         if remote:
             self.dg.init_mqclient()
 
@@ -112,8 +112,8 @@ class OperateMaster:
                            _date is not None])
         fetch_end = max([_date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if
                          _date is not None])
-        trades = self.dg.get_hist_data(ch="trades", sym=sym, sd=fetch_start, ed=fetch_end)
-        orderbooks = self.dg.get_hist_data(ch="trades", sym=sym, sd=fetch_start, ed=fetch_end)
+        trades = self.dg.get_hist_data(ch="trade", sym=sym, sd=fetch_start, ed=fetch_end)
+        orderbooks = self.dg.get_hist_data(ch="orderbook", sym=sym, sd=fetch_start, ed=fetch_end)
         Xy = self.dg.get_Xy(trades, orderbooks)
         self.fp._logger.info("[DONE] Get prepro raw data. {0}~{1}".format(fetch_start, fetch_end))
 
@@ -424,6 +424,7 @@ def main(args=None):
     om.init_learning()
 
     if arg_dict["execute_mode"] == "prepro":
+        pass
         om.init_dataGen()
         # period
         train_start = arg_dict["train_start_date"] if "train_start_date" in arg_dict.keys() else None

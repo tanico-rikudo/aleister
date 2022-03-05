@@ -5,20 +5,23 @@ import numpy as np
 import sys, os
 
 sys.path.append(os.environ['COMMON_DIR'])
-from mq.mq_handler import *
+from mq import mq_handler as mq_handler
 
 from multiprocessing import Process
+from base_process import BaseProcess
 
 VOLATILITY_VAR_DAYS = 30
 VOLATILITY_DAYS = 1
 VOID_ALLOWANCE_RATIO = 1
 
 
-class DataGen:
-    def __init__(self, symbol, general_config_mode, private_api_mode, logger):
-        self.hd = hist_data.histData(symbol, general_config_mode, private_api_mode)
-        self.logger = logger
-        self.mq_settings = load_mq_settings(self.hd.general_config)
+class DataGen(BaseProcess):
+    def __init__(self, _id, symbol, general_config_mode, private_api_mode):
+        super().__init__(_id)
+        self.load_general_config(source="ini", path=None, mode=general_config_mode)
+        # hist data Loger use KULOKO logger as default
+        self.hd = hist_data.histData(symbol, general_config_mode, private_api_mode,logger=self._logger)
+        self.mq_settings = mq_handler.load_mq_settings(self.general_config)
         self.init_mqclient()
 
     def init_mqclient(self):
@@ -27,14 +30,14 @@ class DataGen:
         if self.remote:
             for name in ["historical", "realtime"]:
                 self.mq_rpc_client[name] = \
-                    RpcClient(self.mq_settings["mqserver_host"],
+                    mq_handler.RpcClient(self.mq_settings["mqserver_host"],
                               self.mq_settings["mqname"][name],
                               self.mq_settings["routing_key"][name],
-                              self.logger)
+                              self._logger)
 
-                self.logger.info(f"[DONE] Set MQ client. Name={name}")
+                self._logger.info(f"[DONE] Set MQ client. Name={name}")
         else:
-            self.logger.info(f"[Skip] Set MQ client.")
+            self._logger.info(f"[Skip] Set MQ client.")
 
     def get_hist_data(self, ch, sym, sd, ed, remote=None):
         remote = self.remote if remote is None else remote
@@ -42,18 +45,18 @@ class DataGen:
         if remote:
             try:
                 hist_data = self.mq_rpc_client["historical"].call(command)
-                self.logger.debug(f"[DONE] Fetch hist Feed from server. command={command}")
-                hist_data = pd.read_json(hist_data.decode()).set_index("timestamp")
+                self._logger.debug(f"[DONE] Fetch hist Feed from server. command={command}")
+                hist_data = pd.read_json(hist_data.decode()).set_index("datetime")
             except Exception as e:
                 hist_data = None
-                self.logger.warning(f"[Failure] Cannot fetch hist Feed from server. command={command}, e={e}",
+                self._logger.warning(f"[Failure] Cannot fetch hist Feed from server. command={command}, e={e}",
                                     exc_info=True)
         else:
             try:
                 hist_data = self.hd.get_data(**command)
             except Exception as e:
                 hist_data = None
-                self.logger.warning(f"[Failure] Cannot fetch Feed.:{e}", exc_info=True)
+                self._logger.warning(f"[Failure] Cannot fetch Feed.:{e}", exc_info=True)
 
         return hist_data
 
@@ -65,7 +68,7 @@ class DataGen:
             realtime_data = self.mq_rpc_client["realtime"].call(command)
         except Exception as e:
             realtime_data = None
-            self.logger.warning(f"[Failure] Cannot fetch Feed from server.:{e}", exc_info=True)
+            self._logger.warning(f"[Failure] Cannot fetch Feed from server.:{e}", exc_info=True)
 
         #  separate datas
         json_rst = json.loads(realtime_data)
@@ -78,7 +81,7 @@ class DataGen:
                 df.set_index("datetime", inplace=True)
                 dfs[_key] = df
             except Exception as e:
-                self.logger.warning(f"[Failure] Cannot load data. Key={_key}:{e}")
+                self._logger.warning(f"[Failure] Cannot load data. Key={_key}:{e}")
         return dfs
 
     #### Convert data ###
