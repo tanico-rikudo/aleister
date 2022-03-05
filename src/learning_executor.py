@@ -12,8 +12,8 @@ from sklearn.metrics import accuracy_score
 
 from mlflow_writer import *
 
-from .model import parameter_parser
-from .model import dnn, lstm
+from model.parameter_parser import parameterParser as pp
+from model import dnn, lstm, cgm
 
 from datetime import datetime as dt
 import numpy as np
@@ -69,16 +69,17 @@ class LearningEvaluator(BaseProcess):
         models = {
             "sdnn": dnn.SimpleDnn,
             "slstm": lstm.SimpleLSTM,
-            "cgm": cgm.cgm
+            "cgm": cgm.CGM
         }
+        self._logger.info('Load Model Instance.  Stucture params={0}'.format(model_params.keys()))
         self.model = models.get(model_name.lower())(**model_params)
         self._logger.info('[DONE] Load Model Instance.  Stucture params={0}'.format(model_params))
 
     def load_model_hparameters(self, model_name, source='ini'):
         hparams = {
-            "sdnn": parameter_parser.sdnn,
-            "slstm": parameter_parser.slstm,
-            "cgm":parameter_parser.cgm
+            "sdnn": pp.sdnn,
+            "slstm": pp.slstm,
+            "cgm":pp.cgm
         }
         self.hparams = hparams.get(model_name.lower())(self.model_config, source)
         self._logger.info(f'[DONE]Load hyper params. Name={self.model_name}, Source={source}')

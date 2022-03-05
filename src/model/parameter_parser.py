@@ -66,8 +66,8 @@ class parameterParser:
         hparams = {}
         if source == 'ini':
             hparams["structure_params"] = ["hidden_dim", "vol_input_size","price_input_size","last_dropout_rate",
-                                           "seq_dropout_rate","gbl_dropout_rate","relation_num"
-                                           "output_dim", "num_layers", "window_size"]
+                                           "seq_dropout_rate","gbl_dropout_rate","relation_num",
+                                           "output_dim", "num_layers"]
             hparams["dataset_params"] = ["batch_size", "window_size"]
             
             hparams["dataset"] = model_config.get("DATASET")
@@ -78,9 +78,9 @@ class parameterParser:
             hparams["hidden_dim"] = model_config.getint("HIDDEN_DIM")
             hparams["vol_input_size"] = model_config.getint("VOL_INPUT_SIZE")
             hparams["price_input_size"] = model_config.getint("PRICE_INPUT_SIZE")
-            hparams["last_dropout_rate"] = model_config.getint("LAST_DROP_RATE")
-            hparams["seq_dropout_rate"] = model_config.getint("SEQ_DROP_RATE")
-            hparams["gbl_dropout_rate"] = model_config.getint("GBL_DROP_RATE")
+            hparams["last_dropout_rate"] = model_config.getfloat("LAST_DROP_RATE")
+            hparams["seq_dropout_rate"] = model_config.getfloat("SEQ_DROP_RATE")
+            hparams["gbl_dropout_rate"] = model_config.getfloat("GBL_DROP_RATE")
             hparams["relation_num"] = model_config.getint("RELATION_NUM")
             
             hparams["num_layers"] = model_config.getint("NUM_LAYERS")
