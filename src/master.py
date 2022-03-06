@@ -83,7 +83,7 @@ class OperateMaster:
         self.fp._logger.info("[DONE] Get prepro raw data")
 
         # prepro
-        X = self.dg.get_Xy(trades, orderbooks)
+        X = self.dg.get_Xy(trades=trades, orderbooks=orderbooks, mode="realtime",method='flatten_v1')
         X, _ = self.fp.feature_label_split(df=X, target_col=ans_col)
         X, _ = self.fp.scalingX(X, scaself.ler)
 
@@ -114,7 +114,7 @@ class OperateMaster:
                          _date is not None])
         trades = self.dg.get_hist_data(ch="trade", sym=sym, sd=fetch_start, ed=fetch_end)
         orderbooks = self.dg.get_hist_data(ch="orderbook", sym=sym, sd=fetch_start, ed=fetch_end)
-        Xy = self.dg.get_Xy(trades, orderbooks)
+        Xy = self.dg.get_Xy(trades=trades, orderbooks=orderbooks, mode='train', method='flatten_v1')
         self.fp._logger.info("[DONE] Get prepro raw data. {0}~{1}".format(fetch_start, fetch_end))
 
         # prepro
