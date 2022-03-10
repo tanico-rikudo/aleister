@@ -112,22 +112,63 @@ class OperateMaster:
                            _date is not None])
         fetch_end = max([_date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if
                          _date is not None])
-        trades = self.dg.get_hist_data(ch="trade", sym=sym, sd=fetch_start, ed=fetch_end)
-        orderbooks = self.dg.get_hist_data(ch="orderbook", sym=sym, sd=fetch_start, ed=fetch_end)
-        Xy = self.dg.get_Xy(trades=trades, orderbooks=orderbooks, mode='train', method='flatten_v1')
-        self.fp._logger.info("[DONE] Get prepro raw data. {0}~{1}".format(fetch_start, fetch_end))
-
-        # prepro
-        ans_col = self.fp.model_config.get("ANS_COL")
-        X, y = self.fp.feature_label_split(df=Xy, target_col=ans_col)
-        y = self.fp.onehot_y(y)
+        #TODO: outside
+        method = 'flatten_v1'
+        datas = self.dg.get_Xy(mode='train', method=method, sym=sym, sd=fetch_start, ed=fetch_end)
+        self.fp._logger.info("[DONE] Get prepro raw datas. {0}~{1}".format(fetch_start, fetch_end))
+        
 
         # split period
         # Note: If other kind data , such as attribute data linked to timeseries, will be added,
         #  train_val_test_period_split  can process it. Then, Input [X, data1, data2, y].
-        train_datas, val_datas, test_datas = \
-            self.fp.train_val_test_period_split([X, y], train_start, train_end, valid_start, valid_end, test_start,
-                                                test_end)
+        def split_child_by_period(data):
+            class_data = {}
+            for _key in data.keys():
+                if type(data[_key]) is 'dict':
+                    # parent
+                    child_data =  split_child_by_period(data[_key])
+                else:
+                    # Child (Leaf)
+                    train_data, val_data, test_data = \
+                        self.fp.train_val_test_period_split([data[_key]], train_start, train_end, valid_start, valid_end, test_start, test_end)
+                    child_data = {
+                        'train':train_data,
+                        'test': test_data,
+                        'val': val_data
+                    }
+                class_data[_key] = child_data
+            return class_data
+    
+        def select_child_by_period(data, query_period):
+            class_data = {}
+            for _key in data.keys():
+                if type(data[_key]) is 'dict':
+                    # parent
+                    if query_period in data[_key].keys():
+                        # Child (Leaf)
+                        child_data = data[_key][query_period]
+                    else:
+                        child_data =  select_child_by_period(data[_key],query_period)
+                
+                else:
+                    raise Exception("Why not dict???")
+                    
+                class_data[_key] = child_data
+            return class_data
+        
+        # Split train/test/val ineach leaf
+        splited_data = split_child_by_period(datas)
+        
+        # Make each period tree
+        train_datas = select_child_by_period(splited_data, 'train')
+        test_datas = select_child_by_period(splited_data, 'test')
+        val_datas = select_child_by_period(splited_data, 'val')
+        
+        # TO Numpys following methods
+        # NOTE: Must be: TIME * feature. if stock * feature, they must be flaten
+        train_datas = self.fp.get_numpy_structure(method)(train_datas)
+        test_datas = self.fp.get_numpy_structure(method)(test_datas)
+        val_datas = self.fp.get_numpy_structure(method)(val_datas)
 
         # assign and scaling
         # Note: If other data except  for X is using. Fix fetching train_datas.
@@ -143,7 +184,7 @@ class OperateMaster:
             X_val, y_val = None, None
 
         if test_datas is not None:
-            X_tests = test_datas[0].value
+            X_tests = test_datas[0].values
             X_tests, _ = self.fp.scalingX(X_tests, x_scaler)
             y_test = test_datas[-1].values
         else:

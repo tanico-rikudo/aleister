@@ -22,6 +22,14 @@ dl = daylib.daylib()
 class featurePreprocess(BaseProcess):
     def __init__(self, _id):
         super().__init__(_id)
+        
+    def get_numpy_structure(self, structure_method):
+        structure_methods = {
+            "flatten_v1": self.create_flatten_simple,
+            "ts_v1": self.create_ts_simple
+        }
+        return structure_methods.get(structure_method.lower())
+        
 
     def get_dataset_fn(self, dataset_fn_name):
         fns = {
@@ -175,13 +183,9 @@ class featurePreprocess(BaseProcess):
 
         return train_loader, val_loader, test_loader, test_loader_one
 
-    def onehot_y(self, y):
-        lb = LabelBinarizer()
-        y_onehot = lb.fit_transform(y)
-        idxs = y.index
-        y = pd.DataFrame(y_onehot, columns=lb.classes_, index=idxs)
-        return y
 
+
+    ### Save /load ###
     def save_numpy_datas(self, **kwargs):
         for key, obj in kwargs.items():
             save_path = os.path.join(self.save_dir, "{0}.jbl".format(key))
