@@ -126,7 +126,7 @@ class SLSTMCell(nn.Module):
 
 
 class GLSTMCell(nn.Module):
-    def __init__(self, hidden_dim, attn_pooling):
+    def __init__(self, hidden_dim, attn_pooling,dropout):
         """
 
         :param hidden_dim:
@@ -134,6 +134,7 @@ class GLSTMCell(nn.Module):
         """
         super(GLSTMCell, self).__init__()
         self.hidden_dim = hidden_dim
+        self.dropout = torch.nn.Dropout(dropout)
         self.W = nn.Linear(hidden_dim, hidden_dim * 2, bias=False)
         self.w = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.U = nn.Linear(hidden_dim, hidden_dim * 2)
@@ -163,7 +164,7 @@ class GLSTMCell(nn.Module):
 
 class CGM(nn.Module):
     def __init__(self, hidden_dim, vol_input_size, price_input_size, seq_dropout_rate, gbl_dropout_rate,
-                 last_dropout_rate, relation_num, output_dim, num_layers):
+                 last_dropout_rate, relation_num, output_dim, num_layers, input_dim):
         super(CGM, self).__init__()
         self.hidden_dim = hidden_dim
 
@@ -189,10 +190,6 @@ class CGM(nn.Module):
         """
 
         :param span_nodes: (time, node)
-        :param text_nodes: (node)
-        :param node_text:   (node, seq)
-        :param text_length:
-        :param text_mask:  (node, seq)
         :param node_feature:   (time, node, feature_size)
         :param adj:
         :return:
@@ -266,24 +263,18 @@ class CGM(nn.Module):
         
         
         last_h_layer, last_c_layer, last_g_layer, last_c_g_layer = last_h_layer_volume, last_c_layer_volume, last_g_layer_volume, last_c_g_layer_volume
-        for l in range(self.num_layers):
-            last_h_layer, last_c_layer = self.text_s_cell(node_vector, last_h_layer, last_c_layer, last_g_layer, adj)
-            # g, c_g, h, c
-            last_g_layer, last_c_g_layer = self.text_g_cell(last_g_layer, last_c_g_layer, last_h_layer, last_c_layer)
 
         return last_h_layer, cca_price, cca_volume
 
-    def forward(self, span_nodes, node_text, text_mask, node_feature, adj):
+    def forward(self, span_nodes,  node_feature, adj):
         '''
         :param batch:
             nodes: (time, graph_node)
-            node_text: (time, node, seq)
+            node_feature: (time, node, seq)
             adjs: (time, node, node)
         :param use_cuda:
         :return:    (node, label)
         '''
-        text_lengths = text_mask.sum(-1).int()
-        assert text_lengths.max() <= node_text.size(-1) and text_lengths.min() > 0, (text_lengths, node_text.size())
         last_h, cca_price, cca_volume = self.encode(span_nodes, node_feature, adj)
         # the index 0 here is the first time step, which is because that this is the initialization
         return self.w_out(self.dropout(last_h)), cca_price, cca_volume
