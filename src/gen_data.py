@@ -3,6 +3,8 @@ import json
 import pandas as pd
 import numpy as np
 import sys, os
+from sklearn.preprocessing import LabelBinarizer
+
 
 sys.path.append(os.environ['COMMON_DIR'])
 from mq import mq_handler as mq_handler
@@ -21,9 +23,13 @@ class DataGen(BaseProcess):
         self.load_general_config(source="ini", path=None, mode=general_config_mode)
         # hist data Loger use KULOKO logger as default
         self.hd = hist_data.histData(symbol, general_config_mode, private_api_mode,logger=self._logger)
+        
+        # MQ
         self.mq_settings = mq_handler.load_mq_settings(self.general_config)
-        self.init_mqclient()
-        self.structures = {
+        self.remote = False if self.mq_settings["mqserver_host"] is None else True
+        self.mq_rpc_client = {}
+
+        self.data_structures = {
             "flatten_v1": self.create_flatten_simple,
             "ts_v1": self.create_ts_simple
         }
@@ -31,23 +37,28 @@ class DataGen(BaseProcess):
             "flatten_v1": self.dataset_flatten_simple,
             "ts_v1": self.dataset_ts_simple
         }
+        
+        self.init_mqclient("historical")
+        self.init_mqclient("realtime")
+
 
     # Data fetch functions
-    def init_mqclient(self):
-        self.remote = False if self.mq_settings["mqserver_host"] is None else True
-        self.mq_rpc_client = {}
+    def init_mqclient(self, name):
         if self.remote:
-            for name in ["historical", "realtime"]:
-                self.mq_rpc_client[name] = \
-                    mq_handler.RpcClient(self.mq_settings["mqserver_host"],
-                              self.mq_settings["mqname"][name],
-                              self.mq_settings["routing_key"][name],
-                              self._logger)
+            self.mq_rpc_client[name] = \
+                mq_handler.RpcClient(self.mq_settings["mqserver_host"],
+                            self.mq_settings["mqname"][name],
+                            self.mq_settings["routing_key"][name],
+                            self._logger)
 
-                self._logger.info(f"[DONE] Set MQ client. Name={name}")
+            self._logger.info(f"[DONE] Set MQ client. Name={name}")
         else:
             self._logger.info(f"[Skip] Set MQ client.")
-
+            
+    def close_mqclient(self, name):
+        self.mq_rpc_client[name].close_mq()
+        
+            
     def get_hist_data(self, ch, sym, sd, ed, remote=None):
         remote = self.remote if remote is None else remote
         command = {"ch": ch, "sym": sym, "sd": sd, "ed": ed}
@@ -60,6 +71,10 @@ class DataGen(BaseProcess):
                 hist_data = None
                 self._logger.warning(f"[Failure] Cannot fetch hist Feed from server. command={command}, e={e}",
                                     exc_info=True)
+            finally:
+                self.close_mqclient("historical")
+                self.init_mqclient("historical")
+                      
         else:
             try:
                 hist_data = self.hd.get_data(**command)
@@ -78,6 +93,9 @@ class DataGen(BaseProcess):
         except Exception as e:
             realtime_data = None
             self._logger.warning(f"[Failure] Cannot fetch Feed from server.:{e}", exc_info=True)
+        finally:
+                self.close_mqclient("realtime")
+                self.init_mqclient("realtime")
 
         #  separate datas
         json_rst = json.loads(realtime_data)
@@ -106,7 +124,7 @@ class DataGen(BaseProcess):
         assert mode  in ["train","test","realtime"], f"Not allow mode:{mode}"
         self._logger.info(f"{kwargs}")
         datas = self.origin_datasets.get(method.lower())(**kwargs)
-        Xy = self.structures.get(method.lower())(mode=mode, **datas)
+        Xy = self.data_structures.get(method.lower())(mode=mode, **datas)
         return Xy
     
     ### Auxiliary methods ###
@@ -132,7 +150,6 @@ class DataGen(BaseProcess):
         if related_syms is None:
             related_syms = ["BTC","ETH"]
         self._logger.info(f"Fetching related syms:{related_syms}")
-        related_syms.append(sym)
         fetch_syms = list(set(related_syms))
         datas = { _type: {_sym:None for _sym in fetch_syms } for _type in ["trades","orderbooks"]}
         
@@ -209,11 +226,11 @@ class DataGen(BaseProcess):
             return_cols = return_cols + ["movingBinary"]
             y = self.onehot_y(mtrades.loc[:,["movingBinary"]])
         else:
-            pass
+            y = None
         
         X = mtrades.loc[:,return_cols]
 
-        return {"X":X,'Y':Y}
+        return {"X":X,'y':y}
 
 
     def create_ts_simple(self, trades, orderbooks, mode):
@@ -281,9 +298,9 @@ class DataGen(BaseProcess):
 
                 y = self.onehot_y(mtrades.loc[:,["movingBinary"]])
             else:
-                pass
+                y = None
             X = mtrades.loc[:,return_cols]
-            Xys[_sym] =  {"X":X,'Y':Y}
+            Xys[_sym] =  {"X":X,'y':y}
 
         return Xys
         
