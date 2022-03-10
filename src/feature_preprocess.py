@@ -13,6 +13,7 @@ from custom_dataloader import SequenceDataset, CustomTensorDataset
 
 from debtcollector import removals
 import warnings
+import numpy as np
 
 warnings.simplefilter('always')
 
@@ -23,12 +24,13 @@ class featurePreprocess(BaseProcess):
     def __init__(self, _id):
         super().__init__(_id)
         
-    def get_numpy_structure(self, structure_method):
-        structure_methods = {
-            "flatten_v1": self.create_flatten_simple,
-            "ts_v1": self.create_ts_simple
+    ### Accessor ###
+    def get_input_structures(self, structure_method):
+        input_structures = {
+            "flatten_v1": self.stack_2d,
+            "ts_v1": self.stack_3d
         }
-        return structure_methods.get(structure_method.lower())
+        return input_structures.get(structure_method.lower())
         
 
     def get_dataset_fn(self, dataset_fn_name):
@@ -40,7 +42,18 @@ class featurePreprocess(BaseProcess):
         self.dataset_fn = fns.get(dataset_fn_name)
         self.dataset_fn_name = dataset_fn_name
         self._logger.info('[DONE] Get dataset fn. Function={0}'.format(self.dataset_fn_name))
+        
+    def get_scaler(self, scaler):
+        scalers = {
+            "minmax": MinMaxScaler,
+            "standard": StandardScaler,
+            "maxabs": MaxAbsScaler,
+            "robust": RobustScaler,
+        }
+        self._logger.info("[DONE] Get scaler:{0}".format(scaler.lower()))
+        return scalers.get(scaler.lower())()
 
+    ### Split by row or columns ####
     def feature_label_split(self, df, target_col=None):
         """
         Split  X and y 
@@ -108,26 +121,121 @@ class featurePreprocess(BaseProcess):
             self._logger.warning("[Failure] Split data. Test:{0}~{1}:{2}".format(test_start, test_end, e))
         return trains, vals, tests
 
-    def get_scaler(self, scaler):
-        scalers = {
-            "minmax": MinMaxScaler,
-            "standard": StandardScaler,
-            "maxabs": MaxAbsScaler,
-            "robust": RobustScaler,
-        }
-        self._logger.info("[DONE] Get scaler:{0}".format(scaler.lower()))
-        return scalers.get(scaler.lower())()
-
+    ### Scaler ###
     def scalingX(self, X, scaler=None, scaler_name=None):
         if scaler is None:
+            assert scaler_name is not None, 'Scaleer name must be set'
             scaler = self.get_scaler(scaler_name)
             self._logger.info(f"[DONE] New Xscaler Initilized. Name={scaler_name}")
-            scaler.fit(X)
-            X_scaled = scaler.transform(X)
+            X_scaled = scaler.fit_transform(X)
         else:
-            X_scaled = scaler.transform(X)
+            X_scaled = scaler.fit_transform(X)
         return X_scaled, scaler
+    
+    ### Data tree processor ###
+    def split_child_by_period(self, data_tree, train_start, train_end, valid_start, valid_end, test_start, test_end):
+        new_data_tree = {}
+        for _key in data_tree.keys():
+            if type(data_tree[_key]) is dict:
+                # parent
+                child_data =  self.split_child_by_period(data_tree[_key],train_start, train_end, valid_start, valid_end, test_start, test_end)
+            else:
+                # Child (Leaf)
+                train_data, val_data, test_data = \
+                    self.train_val_test_period_split([data_tree[_key]], train_start, train_end, valid_start, valid_end, test_start, test_end)
+                child_data = {
+                    'train':train_data,
+                    'test': test_data,
+                    'valid': val_data
+                }
+            new_data_tree[_key] = child_data
+        return new_data_tree
 
+    def select_child_by_period(self,data_tree, query_period):
+        """ Pick leaf from data tree 
+
+        Args:
+            data_tree (_type_): separated data by terms, train/test and etc....
+            query_period (_type_): term string. train/test/valid
+
+        Raises:
+            Exception: _description_
+
+        Returns:
+            new_data_tree: _description_
+        """
+        new_data_tree = {}
+        assert query_period in ['train','test','valid'], f"invlid term string:{query_period}. Must be in train','test','valid'"
+        
+        for _key in data_tree.keys():
+            if type(data_tree[_key]) is dict:
+                # parent
+                if query_period in data_tree[_key].keys():
+                    # Child (Leaf)
+                    child_data = data_tree[_key][query_period]
+                else:
+                    child_data =  self.select_child_by_period(data_tree[_key],query_period)
+            
+            else:
+                raise Exception(f"Why not dict???: {data_tree[_key]}")
+                
+            new_data_tree[_key] = child_data
+        return new_data_tree
+    
+    ### ###
+    def stack_2d(self, data_tree, scalers=None):
+        """ Make numpy obj
+        Scaler: minmax
+        
+        Args:
+            data_tree (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        # Each X/y have 1 kind. 
+        # datetime * feature
+        X = data_tree['X'][0].values
+        y = data_tree['y'][0].values
+        
+        input_dim = X.shape[1]
+        
+        # Scaler
+        scaler = scalers[0] if scalers is not None else None
+        scaled_X, scaler = self.scalingX(X.reshape(-1,X.shape[1]),scaler=scaler, scaler_name='minmax')
+        
+        return { 'data' :{ 'X':X, 'y':y }, 'scaler': [scaler], 'input_dim':input_dim}
+        
+    ### ###
+    @staticmethod
+    def stack_3d(self, data_tree, scalers=None):
+        """ Make numpy obj
+        Scaler: minmax
+
+        Args:
+            data_tree (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        # Each X/y have only 1 kind. 
+        # symbol * datetime * feature
+        X = np.array([data_tree[_sym]['X'][0].values for _sym in data_tree.keys()])
+        y = np.array([data_tree[_sym]['y'][0].values for _sym in data_tree.keys()])
+        
+        input_dim = X.shape[2]
+        
+        # transpose to... datetime * symbol * feature
+        X = X.transpose(1, 0, 2)
+        y = y.transpose(1, 0, 2)
+        
+        # Scaler
+        scaler = scalers[0] if scalers is not None else None
+        scaled_X, scaler = self.scalingX(X.reshape(-1,X.shape[2]),scaler=scaler, scaler_name='minmax')
+        return { 'data' :{ 'X':X, 'y':y }, 'scaler': [scaler], 'input_dim':input_dim}
+        
+
+    ### Torch dataloader ###
     def get_dataloader(self, dataset_fn, X_trains=None, y_train=None, X_vals=None, y_val=None, X_tests=None,
                        y_test=None, **dataset_params):
         """
@@ -147,23 +255,24 @@ class featurePreprocess(BaseProcess):
         batch_size = dataset_params["batch_size"]
         train_loader = None
         if X_trains is not None:
-            train_features = [torch.Tensor(X_train) for X_train in X_trains]
+            train_features = torch.Tensor(X_trains)
             train_targets = torch.Tensor(y_train)
 
             # make dataset 
-            train = self.dataset_fn(*train_features, train_targets, **dataset_params)
+            train = self.dataset_fn(train_features, train_targets, **dataset_params)
 
             # Convert to  loader
             train_loader = DataLoader(train, batch_size=batch_size, shuffle=False, drop_last=True)
+            print(len(train_loader))
             self._logger.info("[DONE] Create Train Data Loader")
 
         val_loader = None
         if X_vals is not None:
-            val_features = [torch.Tensor(X_val) for X_val in X_vals]
+            val_features =torch.Tensor(X_vals)
             val_targets = torch.Tensor(y_val)
 
             # make dataset 
-            val = self.dataset_fn(*val_features, val_targets, **dataset_params)
+            val = self.dataset_fn(val_features, val_targets, **dataset_params)
 
             # Convert to  loader
             val_loader = DataLoader(val, batch_size=batch_size, shuffle=False, drop_last=True)
@@ -174,7 +283,7 @@ class featurePreprocess(BaseProcess):
             test_targets = torch.Tensor(y_test)
 
             # make dataset 
-            test = self.dataset_fn(*test_features, test_targets, **dataset_params)
+            test = self.dataset_fn(test_features, test_targets, **dataset_params)
 
             # Convert to  loader
             test_loader = DataLoader(test, batch_size=batch_size, shuffle=False, drop_last=True)
@@ -183,8 +292,7 @@ class featurePreprocess(BaseProcess):
 
         return train_loader, val_loader, test_loader, test_loader_one
 
-
-
+    
     ### Save /load ###
     def save_numpy_datas(self, **kwargs):
         for key, obj in kwargs.items():
@@ -207,3 +315,5 @@ class featurePreprocess(BaseProcess):
             except Exception as e:
                 self._logger.warning("[Failure] Load Prepro data. Key={0}, path={1}".format(key, load_path))
         return (objs[key] for key in args)
+
+

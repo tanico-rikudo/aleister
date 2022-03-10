@@ -60,11 +60,11 @@ class OperateMaster:
         self.init_mlflow()
         self.le.get_device()
         self.le.load_general_config(source="ini", path=None, mode=self.general_config_mode)
+        self.le.load_model_config(source="ini", path=None, model_name=self.model_name)
+        self.le.load_model_hparameters(self.model_name)
 
-    def init_dataGen(self, remote=False):
+    def init_dataGen(self):
         self.dg = DataGen(self.id, self.sym, self.general_config_mode, self.private_api_mode)
-        if remote:
-            self.dg.init_mqclient()
 
     def set_mlflow_settings(self, mlflow_client_kwargs, mlflow_tags):
         self.mlflow_tags = mlflow_tags
@@ -90,7 +90,7 @@ class OperateMaster:
         return X
 
     def realtime_predict(self):
-        scaler = self.fp.load_numpy_datas(["x_scaler"])
+        scaler = self.fp.load_numpy_datas(["X_scaler"])
         
         # Fetch all hist
         # TODO
@@ -112,97 +112,39 @@ class OperateMaster:
                            _date is not None])
         fetch_end = max([_date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if
                          _date is not None])
-        #TODO: outside
-        method = 'flatten_v1'
-        datas = self.dg.get_Xy(mode='train', method=method, sym=sym, sd=fetch_start, ed=fetch_end)
+
+        data_structure_method = self.fp.model_config.get("DATA_STRUCTURE")
+        data_tree = self.dg.get_Xy(mode='train', method=method, sym=sym, sd=fetch_start, ed=fetch_end)
         self.fp._logger.info("[DONE] Get prepro raw datas. {0}~{1}".format(fetch_start, fetch_end))
         
-
-        # split period
-        # Note: If other kind data , such as attribute data linked to timeseries, will be added,
-        #  train_val_test_period_split  can process it. Then, Input [X, data1, data2, y].
-        def split_child_by_period(data):
-            class_data = {}
-            for _key in data.keys():
-                if type(data[_key]) is 'dict':
-                    # parent
-                    child_data =  split_child_by_period(data[_key])
-                else:
-                    # Child (Leaf)
-                    train_data, val_data, test_data = \
-                        self.fp.train_val_test_period_split([data[_key]], train_start, train_end, valid_start, valid_end, test_start, test_end)
-                    child_data = {
-                        'train':train_data,
-                        'test': test_data,
-                        'val': val_data
-                    }
-                class_data[_key] = child_data
-            return class_data
-    
-        def select_child_by_period(data, query_period):
-            class_data = {}
-            for _key in data.keys():
-                if type(data[_key]) is 'dict':
-                    # parent
-                    if query_period in data[_key].keys():
-                        # Child (Leaf)
-                        child_data = data[_key][query_period]
-                    else:
-                        child_data =  select_child_by_period(data[_key],query_period)
-                
-                else:
-                    raise Exception("Why not dict???")
-                    
-                class_data[_key] = child_data
-            return class_data
-        
         # Split train/test/val ineach leaf
-        splited_data = split_child_by_period(datas)
+        term_splited_data_tree = self.fp.split_child_by_period(data_tree,train_start, train_end, valid_start, valid_end, test_start, test_end)
+        self.fp._logger.info("[DONE] Split by term.")
         
         # Make each period tree
-        train_datas = select_child_by_period(splited_data, 'train')
-        test_datas = select_child_by_period(splited_data, 'test')
-        val_datas = select_child_by_period(splited_data, 'val')
+        train_datas = self.fp.select_child_by_period(term_splited_data_tree, 'train')
+        test_datas = self.fp.select_child_by_period(term_splited_data_tree, 'test')
+        val_datas = self.fp.select_child_by_period(term_splited_data_tree, 'valid')
+        self.fp._logger.info("[DONE] picked by term.")
         
-        # TO Numpys following methods
-        # NOTE: Must be: TIME * feature. if stock * feature, they must be flaten
-        train_datas = self.fp.get_numpy_structure(method)(train_datas)
-        test_datas = self.fp.get_numpy_structure(method)(test_datas)
-        val_datas = self.fp.get_numpy_structure(method)(val_datas)
-
-        # assign and scaling
-        # Note: If other data except  for X is using. Fix fetching train_datas.
-        X_trains = train_datas[0].values
-        X_trains, x_scaler = self.fp.scalingX(X_trains, scaler_name="minmax")
-        y_train = train_datas[-1].values
-
-        if val_datas is not None:
-            X_vals = val_datas[0].values
-            X_vals, _ = self.fp.scalingX(X_vals, x_scaler)
-            y_val = val_datas[-1].values
-        else:
-            X_val, y_val = None, None
-
-        if test_datas is not None:
-            X_tests = test_datas[0].values
-            X_tests, _ = self.fp.scalingX(X_tests, x_scaler)
-            y_test = test_datas[-1].values
-        else:
-            X_tests, y_test = None, None
+        # to ndarray objects
+        train_datas = self.fp.get_input_structures(method)(train_datas)
+        test_datas = self.fp.get_input_structures(method)(test_datas, scalers=train_datas['scaler'])
+        val_datas = self.fp.get_input_structures(method)(val_datas, scalers=train_datas['scaler'])
+        self.fp._logger.info("[DONE] To numpy and numpy ")
 
         #  Note: If other data except  for X is using. Fix X_train": X_trains, "X_val":X_vals, "X_test": X_tests
         self.fp.save_numpy_datas(**{
-            "X_train": X_trains, "X_val": X_vals, "X_test": X_tests,
-            "y_train": y_train, "y_val": y_val, "y_test": y_test,
-            "x_scaler": x_scaler
+            "X_train": train_datas['data']['X'], "X_val": test_datas['data']['X'], "X_test": val_datas['data']['X'],
+            "y_train": train_datas['data']['y'], "y_val": test_datas['data']['y'], "y_test": val_datas['data']['y'],
+            "X_scaler": train_datas['data']['scaler'],"note":{'input_dim':train_datas['input_dim']}
         })
 
-    def train_worker(self, X_trains, X_vals, y_train, y_val):
+    def train_worker(self, X_trains, X_vals, y_train, y_val, note):
 
         # train set up
-        input_dim = X_trains[0].shape[1]
         model_params = {_k: self.le.hparams[_k] for _k in self.le.hparams["structure_params"]}
-        model_params['input_dim'] = input_dim
+        model_params['input_dim'] = note['input_dim']
 
         self.le.get_model_instance(self.le.model_name, model_params)
 
@@ -235,19 +177,13 @@ class OperateMaster:
         self.test_out_of_data()
 
     def train(self):
-        obj_keys = ["X_train", "X_val", "y_train", "y_val"]
-        X_train, X_val, y_train, y_val = self.fp.load_numpy_datas(obj_keys)
-        X_trains = [X_train]
-        X_vals = [X_val]
-
-        self.le.load_model_config(source="ini", path=None, model_name=self.le.model_name)
-        self.le.load_model_hparameters(self.le.model_name)
-
-        self.train_worker(X_trains, X_vals, y_train, y_val)
+        obj_keys = ["X_train", "X_val", "y_train", "y_val", "note"]
+        X_trains, X_vals, y_trains, y_vals, note = self.fp.load_numpy_datas(obj_keys)
+        self.train_worker(X_trains, X_vals, y_train, y_val,  note )
 
     def gtrain(self):
-        obj_keys = ["X_train", "X_val", "y_train", "y_val"]
-        X_train, X_val, y_train, y_val = self.fp.load_numpy_datas(obj_keys)
+        obj_keys = ["X_train", "X_val", "y_train", "y_val", "note"]
+        X_train, X_val, y_train, y_val,  note  = self.fp.load_numpy_datas(obj_keys)
         X_trains = [X_train]
         X_vals = [X_val]
 
@@ -262,11 +198,11 @@ class OperateMaster:
             # new experiment
             self.update_mlflow_tags(MLFLOW_RUN_NAME, f"{original_run_name}_{i}")
             self.set_mlflow_settings(self.mlflow_client_kwargs, self.mlflow_tags)
-            self.train_worker(X_trains, X_vals, y_train, y_val)
-
+            self.train_worker(X_trains, X_vals, y_train, y_val,note)
+            
     def test_out_of_data(self):
-        obj_keys = ["X_test", "y_test"]
-        X_test, y_test = self.fp.load_numpy_datas(obj_keys)
+        obj_keys = ["X_test", "y_test", "note"]
+        X_test, y_test, note  = self.fp.load_numpy_datas(obj_keys)
         if X_test is None:
             self.fp._logger.info("No test data.")
             return
@@ -461,9 +397,6 @@ def main(args=None):
     }
     om.set_mlflow_settings(mlflow_client_kwargs, mlflow_tags)
 
-    # load conofigs into each module
-    om.init_learning()
-
     if arg_dict["execute_mode"] == "prepro":
         pass
         om.init_dataGen()
@@ -477,8 +410,10 @@ def main(args=None):
         om.preprocessing(sym, train_start, train_end, valid_start, valid_end, test_start, test_end)
     else:
         if arg_dict["execute_mode"] == "train":
+            om.init_learning()
             om.train()
         elif arg_dict["execute_mode"] == "gtrain":
+            om.init_learning()
             om.gtrain()
         elif arg_dict["execute_mode"] == "deploy_model":
             om.deploy_best_model()

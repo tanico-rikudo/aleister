@@ -55,6 +55,7 @@ class parameterParser:
             hparams["lr"] = model_config.getfloat("LR")
             hparams["optimizer"] = model_config.get("OPTIMIZER")
             hparams["loss_fn"] = model_config.get("LOSSFN")
+
         else:
             raise Exception("Fail to recognize config source={0}".format(source))
         return hparams
