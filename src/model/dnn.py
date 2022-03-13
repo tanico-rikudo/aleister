@@ -23,7 +23,7 @@ class SimpleDnn(nn.Module):
         # x = self.relu(x)
 
         x = self.layer_2(x)
-        x = self.batchnorm2(x)
+        # x = self.batchnorm2(x)
         x = self.relu(x)
         x = self.dropout(x)
 

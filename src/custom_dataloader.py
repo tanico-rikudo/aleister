@@ -63,7 +63,7 @@ class SequenceDataset(Dataset):
                 X_padded = np.vstack([X_origin, padding])
                 Xs.append(X_padded)
 
-        ys = np.expand_dims(self.y[idx], axis = 0)
+        ys = self.y[idx]
         return Xs, ys
 
 
@@ -73,6 +73,7 @@ class CustomTensorDataset(TensorDataset):
         super(CustomTensorDataset, self).__init__(*tensors)
         self.X_tensors = tensors[:-1]
         self.y_tensor = tensors[-1]
+        self.batch_size = params["batch_size"]  # keep
         self.Xs = [X_tensor.numpy() for X_tensor in self.X_tensors]
         self.y = self.y_tensor.numpy()
 
@@ -80,6 +81,6 @@ class CustomTensorDataset(TensorDataset):
         return self.Xs[0].shape[0]
 
     def __getitem__(self, idx):
-        Xs = np.expand_dims(self.Xs[0][idx], axis = 0)
-        ys = np.expand_dims(self.y[1][idx], axis = 0)
+        Xs = [_Xs[idx] for _Xs in self.Xs ] 
+        ys =  self.y[idx]
         return Xs, ys

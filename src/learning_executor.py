@@ -91,25 +91,23 @@ class LearningEvaluator(BaseProcess):
 
     def train_step(self, xs, ys):
         xs = [x.to(self.device) for x in xs]
-        # xs = [xs[0].to(self.device),xs[0].to(self.device) ]
-        ys = [y.to(self.device) for y in ys]
+        ys = ys.to(self.device)
         self.model.train()
         yhat = self.model(*xs)
-        loss = self.loss_fn(ys[0], yhat)
+        loss = self.loss_fn(ys, yhat)
         loss.backward()
         self.optimizer.step()
         return loss.item()
 
     def eval_step(self, xs, ys):
         xs = [x.to(self.device) for x in xs]
-        # xs = [xs[0].to(self.device),xs[0].to(self.device) ]
-        ys = [y.to(self.device) for y in ys]
+        ys = ys.to(self.device)
         self.model.eval()
         yhat = self.model(*xs)
-        loss = self.loss_fn(ys[0], yhat).item()
-        prediction = yhat.to(self.device).detach().numpy()[0]
+        loss = self.loss_fn(ys, yhat).item()
+        prediction = yhat.to(self.device).detach().numpy()
         # print(prediction)
-        truth = ys[0].to(self.device).detach().numpy()[0]
+        truth = ys.to(self.device).detach().numpy()
         return prediction, truth, loss
 
     def train(self, train_loader, val_loader, batch_size=64, n_epochs=10, n_features=1):
@@ -170,6 +168,10 @@ class LearningEvaluator(BaseProcess):
 
                 validation_loss = np.mean(batch_val_losses)
                 self.val_losses.append(validation_loss)
+                
+                #  stacked numpy data  to nu
+                predictions = np.concatenate(predictions)
+                truths = np.concatenate(truths)
 
                 # record
                 self.prediction["val"], self.truths["val"] = predictions, truths
