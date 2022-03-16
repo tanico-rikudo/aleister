@@ -129,8 +129,12 @@ class DataGen(BaseProcess):
     
     ### Auxiliary methods ###
     def get_ohlcv(self, data):
-        ohlcv = data.price.resample('T', label='left', closed='left').ohlc()
-        return ohlcv
+        #TODO: Ass volume
+        ohlc = data.price.resample('T', label='left', closed='left').ohlc()
+        ohlc.loc[:,['open','high','low','close']] = ohlc.loc[:,['open','high','low','close']].fillna(method='ffill')
+        # df_v = data.volume.resample('T', label='left', closed='left').ohlc()
+        # df_ohlcv = pd.concat([df_ohlc, df_v],axis=1).reset_index()
+        return ohlc
     
     def onehot_y(self, y):
         lb = LabelBinarizer()
