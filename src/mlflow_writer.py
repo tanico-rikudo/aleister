@@ -55,6 +55,14 @@ class MlflowWriter():
             self._logger.warning(f"[Failure] Cannot regist model. Name:{model_name}. :{e}", exc_info=True)
         pass
 
+    def search_registered_model(self, name):
+        r_models = self.client.list_registered_models()
+        for rm in r_models:
+            if rm.name == name:
+                return True
+        return False
+
+
     def print_registered_model_info(self, rm):
         s = f"name: {rm.name}, \
             tags: {rm.tags}, \
