@@ -279,7 +279,7 @@ class featurePreprocess(BaseProcess):
             self._logger.info("[DONE] Create Valid Data Loader")
         test_loader, test_loader_one = None, None
         if X_tests is not None:
-            test_features = [torch.Tensor(X_test) for X_test in X_tests]
+            test_features =torch.Tensor(X_tests)
             test_targets = torch.Tensor(y_test)
 
             # make dataset 

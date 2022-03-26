@@ -7,8 +7,6 @@ from mlflow_writer import MlflowWriter
 from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME, MLFLOW_USER, MLFLOW_SOURCE_NAME
 from datetime import datetime as dt
 
-sys.path.append(os.path.join(os.environ['KULOKO_DIR'], "items"))
-sys.path.append(os.path.join(os.path.dirname('__file__'), '..'))
 os.environ['INIDIR'] = os.environ['ALEISTER_INI']
 INIDIR = os.environ['INIDIR']
 LOGDIR = os.environ['ALEISTER_LOGDIR']
@@ -75,7 +73,6 @@ class OperateMaster:
 
     def realtime_preprocessing(self, general_config, logger, scaler):
 
-        
         # Fetch real data vim mq
         datas = self.dg.fetch_realdata()
         trades = datas["trade"]
@@ -83,7 +80,7 @@ class OperateMaster:
         self.fp._logger.info("[DONE] Get prepro raw data")
 
         # prepro
-        X = self.dg.get_Xy(trades=trades, orderbooks=orderbooks, mode="realtime",method='flatten_v1')
+        X = self.dg.get_Xy(trades=trades, orderbooks=orderbooks, mode="realtime", method='flatten_v1')
         X, _ = self.fp.feature_label_split(df=X, target_col=ans_col)
         X, _ = self.fp.scalingX(X, scaself.ler)
 
@@ -91,7 +88,7 @@ class OperateMaster:
 
     def realtime_predict(self):
         scaler = self.fp.load_numpy_datas(["X_scaler"])
-        
+
         # Fetch all hist
         # TODO
         # Fetch real data vim mq
@@ -106,38 +103,43 @@ class OperateMaster:
         return prediction
 
     def preprocessing(self, sym, train_start, train_end, valid_start, valid_end, test_start, test_end):
-        # gen data 
+        # gen data
         self.fp._logger.info(f"{train_start}, {train_end}, {valid_start}, {valid_end}, {test_start}, {test_end}")
         fetch_start = min([_date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if
                            _date is not None])
         fetch_end = max([_date for _date in [train_start, train_end, valid_start, valid_end, test_start, test_end] if
                          _date is not None])
 
-        data_structure_method = self.fp.model_config.get("DATA_STRUCTURE")
-        data_tree = self.dg.get_Xy(mode='train', method=method, sym=sym, sd=fetch_start, ed=fetch_end)
-        self.fp._logger.info("[DONE] Get prepro raw datas. {0}~{1}".format(fetch_start, fetch_end))
-        
+        output_data_structure = self.fp.model_config.get("OUTPUT_DATA_STRUCTURE")
+        input_data_structure = self.fp.model_config.get("INPUT_DATA_STRUCTURE")
+        data_tree = self.dg.get_Xy(mode='train',
+                                   input_data_structure=input_data_structure,
+                                   output_data_structure=output_data_structure,
+                                   sym=sym, sd=fetch_start, ed=fetch_end)
+        self.fp._logger.info(f"[DONE] Get prepro raw datas. Sym={sym}, Data structure {fetch_start}~{fetch_end}")
+
         # Split train/test/val ineach leaf
-        term_splited_data_tree = self.fp.split_child_by_period(data_tree,train_start, train_end, valid_start, valid_end, test_start, test_end)
+        term_splited_data_tree = self.fp.split_child_by_period(data_tree, train_start, train_end, valid_start,
+                                                               valid_end, test_start, test_end)
         self.fp._logger.info("[DONE] Split by term.")
-        
+
         # Make each period tree
         train_datas = self.fp.select_child_by_period(term_splited_data_tree, 'train')
         test_datas = self.fp.select_child_by_period(term_splited_data_tree, 'test')
         val_datas = self.fp.select_child_by_period(term_splited_data_tree, 'valid')
         self.fp._logger.info("[DONE] picked by term.")
-        
+
         # to ndarray objects
-        train_datas = self.fp.get_input_structures(method)(train_datas)
-        test_datas = self.fp.get_input_structures(method)(test_datas, scalers=train_datas['scaler'])
-        val_datas = self.fp.get_input_structures(method)(val_datas, scalers=train_datas['scaler'])
+        train_datas = self.fp.get_input_structures(input_data_structure)(train_datas)
+        test_datas = self.fp.get_input_structures(input_data_structure)(test_datas, scalers=train_datas['scaler'])
+        val_datas = self.fp.get_input_structures(input_data_structure)(val_datas, scalers=train_datas['scaler'])
         self.fp._logger.info("[DONE] To numpy and numpy ")
 
         #  Note: If other data except  for X is using. Fix X_train": X_trains, "X_val":X_vals, "X_test": X_tests
         self.fp.save_numpy_datas(**{
             "X_train": train_datas['data']['X'], "X_val": test_datas['data']['X'], "X_test": val_datas['data']['X'],
             "y_train": train_datas['data']['y'], "y_val": test_datas['data']['y'], "y_test": val_datas['data']['y'],
-            "X_scaler": train_datas['data']['scaler'],"note":{'input_dim':train_datas['input_dim']}
+            "X_scaler": train_datas['data']['scaler'], "note": {'input_dim': train_datas['input_dim']}
         })
 
     def train_worker(self, X_trains, X_vals, y_train, y_val, note):
@@ -179,44 +181,41 @@ class OperateMaster:
     def train(self):
         obj_keys = ["X_train", "X_val", "y_train", "y_val", "note"]
         X_trains, X_vals, y_trains, y_vals, note = self.fp.load_numpy_datas(obj_keys)
-        self.train_worker(X_trains, X_vals, y_train, y_val,  note )
+        self.train_worker(X_trains, X_vals, y_trains, y_vals, note)
 
     def gtrain(self):
         obj_keys = ["X_train", "X_val", "y_train", "y_val", "note"]
-        X_train, X_val, y_train, y_val,  note  = self.fp.load_numpy_datas(obj_keys)
-        X_trains = [X_train]
-        X_vals = [X_val]
+        X_trains, X_vals, y_trains, y_vals, note = self.fp.load_numpy_datas(obj_keys)
 
         model_config = self.le.load_model_config(source="yaml", path=None, model_name=self.le.model_name, replace=False)
         param_grid = ParameterGrid(model_config)
 
         original_run_name = self.mlflow_tags[MLFLOW_RUN_NAME]
+        len_experiment = len(param_grid)
         for i, g in enumerate(param_grid):
+            self.le._logger.info(f"[Start] Grid experiment. {i}/{len_experiment}")
             g = {self.le.model_name: g}
             self.le.load_model_config(source="dict", dict_obj=g, model_name=self.le.model_name, replace=True)
             self.le.load_model_hparameters(self.le.model_name)
             # new experiment
             self.update_mlflow_tags(MLFLOW_RUN_NAME, f"{original_run_name}_{i}")
             self.set_mlflow_settings(self.mlflow_client_kwargs, self.mlflow_tags)
-            self.train_worker(X_trains, X_vals, y_train, y_val,note)
-            
+            self.train_worker(X_trains, X_vals, y_trains, y_vals, note)
+            self.le._logger.info(f"[DONE] Grid experiment. {i}/{len_experiment}")
+
     def test_out_of_data(self):
         obj_keys = ["X_test", "y_test", "note"]
-        X_test, y_test, note  = self.fp.load_numpy_datas(obj_keys)
-        if X_test is None:
+        X_tests, y_tests, note = self.fp.load_numpy_datas(obj_keys)
+        if X_tests is None:
             self.fp._logger.info("No test data.")
             return
-        X_tests = [X_test]
-
-        input_dim = X_test.shape[1]
-        batch_size = self.le.hparams["batch_size"]
 
         self.fp.get_dataset_fn(self.le.hparams["dataset"])
         dataset_params = {_k: self.le.hparams[_k] for _k in self.le.hparams["dataset_params"]}
         _, _, test_loader, test_loader_one = self.fp.get_dataloader(self.le.hparams["dataset"], X_trains=None,
                                                                     y_train=None, X_vals=None, y_val=None,
-                                                                    X_tests=X_tests, y_test=y_test, **dataset_params)
-        # print(test_loader_one)
+                                                                    X_tests=X_tests, y_test=y_tests, **dataset_params)
+
         lossfn_params = {}
         self.le.get_loss_fn(self.le.hparams["optimizer"], {})
         predictions, values = self.le.evaluate(test_loader_one)
@@ -232,7 +231,7 @@ class OperateMaster:
         best_runs = self.mlwriter.client.search_runs(
             experiment_ids=[experiment_id],
             max_results=1,
-            order_by=["metrics.accuracy DESC"]
+            order_by=["metrics.valid_acc DESC"]
         )
         if len(best_runs) == 0:
             self.le._logger.info(f"[END] No runs. Experiment Name={self.id}, Id={experiment_id}")
@@ -242,8 +241,11 @@ class OperateMaster:
 
         best_run_id = best_run.info.run_id
 
-        # register model 
-        self.mlwriter.register_model(model_name)
+        # register model
+        if not self.mlwriter.search_registered_model:
+            self.mlwriter.register_model(model_name)
+        else:
+            self.le._logger("[SKIP] Model have beenn registered.")
 
         # register(if no momdel)
         mv = self.mlwriter.create_model_version(model_name, experiment_id, best_run_id)
@@ -418,7 +420,7 @@ def main(args=None):
         elif arg_dict["execute_mode"] == "deploy_model":
             om.deploy_best_model()
         elif arg_dict["execute_mode"] == "rpredict":
-            om.init_dataGen(remote=True)
+            om.init_dataGen()
             om.realtime_predict()
 
 

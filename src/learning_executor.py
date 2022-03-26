@@ -23,9 +23,11 @@ import tempfile
 from plotly.offline import plot
 import plotly.graph_objects as go
 
+import mlflow
+
+sys.path.append(os.environ["COMMON_DIR"])
 from base_process import BaseProcess
 
-import mlflow
 
 
 class LearningEvaluator(BaseProcess):
@@ -212,6 +214,9 @@ class LearningEvaluator(BaseProcess):
                 prediction, truth, val_loss = self.eval_step(x_tests, y_test)
                 predictions.append(prediction)
                 truths.append(truth)
+
+        predictions = np.concatenate(predictions)
+        truths = np.concatenate(truths)
 
         # record 
         self.prediction["eval"], self.truths["eval"] = predictions, truths
