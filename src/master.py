@@ -71,7 +71,16 @@ class OperateMaster:
     def update_mlflow_tags(self, key, val):
         self.mlflow_tags[key] = val
 
-    def realtime_preprocessing(self, general_config, logger, scaler):
+    def realtime_preprocessing(self):
+        scalers, note = self.fp.load_numpy_datas(["X_scaler","note"])
+        # Note: Avoid generator
+        scaler_list = []
+        self.fp._logger.info(f"{scalers}")
+        for scaler in scalers:
+            scaler_list.append(scaler)
+
+        output_data_structure = self.fp.model_config.get("OUTPUT_DATA_STRUCTURE")
+        input_data_structure = self.fp.model_config.get("INPUT_DATA_STRUCTURE")
 
         # Fetch real data vim mq
         datas = self.dg.fetch_realdata()
@@ -80,25 +89,51 @@ class OperateMaster:
         self.fp._logger.info("[DONE] Get prepro raw data")
 
         # prepro
-        X = self.dg.get_Xy(trades=trades, orderbooks=orderbooks, mode="realtime", method='flatten_v1')
-        X, _ = self.fp.feature_label_split(df=X, target_col=ans_col)
-        X, _ = self.fp.scalingX(X, scaself.ler)
+        data_tree = self.dg.get_Xy(mode="realtime",
+                                   sym=self.sym,
+                                   trades=trades,
+                                   orderbooks=orderbooks,
+                                   input_data_structure=input_data_structure,
+                                   output_data_structure=output_data_structure)
 
-        return X
+        # Split train/test/val ineach leaf
+        term_splited_data_tree = self.fp.split_child_by_period(data_tree, realtime=True)
+        self.fp._logger.info("[DONE] Split by term.")
+
+        # Make each period tree
+        realtime_datas = self.fp.select_child_by_period(term_splited_data_tree, 'realtime')
+        self.fp._logger.info("[DONE] picked by term.")
+
+        # to ndarray objects
+        realtime_datas = self.fp.get_input_structures(input_data_structure)(realtime_datas, scalers=scaler_list)
+
+        self.fp._logger.info("[DONE] To numpy and numpy ")
+        return realtime_datas, note
 
     def realtime_predict(self):
-        scaler = self.fp.load_numpy_datas(["X_scaler"])
-
-        # Fetch all hist
-        # TODO
-        # Fetch real data vim mq
-        # TODO
-        X = self.realtime_preprocessing(self.fp.general_config, self.fp._logger, scaler)
 
         # todo: mode conider
         uri = self.load_prod_model()
         self.le.load_mlflow_model(uri)
-        prediction = self.le.prediction(X)
+
+        realtime_datas, note = self.realtime_preprocessing()
+
+        # train set up
+        model_params = {_k: self.le.hparams[_k] for _k in self.le.hparams["structure_params"]}
+        model_params['input_dim'] = note['input_dim']
+
+        self.le.get_model_instance(self.le.model_name, model_params)
+
+        self.fp.get_dataset_fn(self.le.hparams["dataset"])
+        dataset_params = {_k: self.le.hparams[_k] for _k in self.le.hparams["dataset_params"]}
+        _, _, _, test_loader_one = self.fp.get_dataloader(
+            self.le.hparams["dataset"], None, None, None,None,
+            realtime_datas["data"]["X"], realtime_datas["data"]["y"], **dataset_params)
+
+        prediction = self.le.predict(test_loader_one)
+        # TODO:RPC
+
+
         # todo: save somwwhre
         return prediction
 
@@ -139,7 +174,7 @@ class OperateMaster:
         self.fp.save_numpy_datas(**{
             "X_train": train_datas['data']['X'], "X_val": test_datas['data']['X'], "X_test": val_datas['data']['X'],
             "y_train": train_datas['data']['y'], "y_val": test_datas['data']['y'], "y_test": val_datas['data']['y'],
-            "X_scaler": train_datas['data']['scaler'], "note": {'input_dim': train_datas['input_dim']}
+            "X_scaler": train_datas['scaler'], "note": {'input_dim': train_datas['input_dim']}
         })
 
     def train_worker(self, X_trains, X_vals, y_train, y_val, note):
@@ -245,7 +280,7 @@ class OperateMaster:
         if not self.mlwriter.search_registered_model:
             self.mlwriter.register_model(model_name)
         else:
-            self.le._logger("[SKIP] Model have beenn registered.")
+            self.le._logger.info("[SKIP] Model have beenn registered.")
 
         # register(if no momdel)
         mv = self.mlwriter.create_model_version(model_name, experiment_id, best_run_id)
@@ -260,7 +295,7 @@ class OperateMaster:
         for mv in mvs:
             if mv.current_stage == 'Production':
                 prod_mvs.append(mv)
-        if len(prod_mvs):
+        if len(prod_mvs)==0:
             raise Exception("No Model on Prod Stage.")
         run_id = prod_mvs[0].run_id  # lastest
         run_info = self.mlwriter.client.get_run(run_id)
@@ -421,7 +456,7 @@ def main(args=None):
             om.deploy_best_model()
         elif arg_dict["execute_mode"] == "rpredict":
             om.init_dataGen()
-            om.realtime_predict()
+            om.realtime_predict(sym)
 
 
 if __name__ == "__main__":

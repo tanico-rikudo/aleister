@@ -12,7 +12,7 @@ from torch.nn.utils.rnn import pad_packed_sequence as unpack
 class Attentive_Pooling(nn.Module):
     def __init__(self, hidden_dim):
         """
-
+        Attention mechanism 
         :param hidden_dim:
         """
         super(Attentive_Pooling, self).__init__()
@@ -36,6 +36,7 @@ class Attentive_Pooling(nn.Module):
         if mask is not None:
             score = score.masked_fill(mask.eq(0), -1e9)
         alpha = F.softmax(score, -1)  # node,
+        # Note: Why -2 ???
         s = torch.sum(torch.unsqueeze(alpha, -1) * memory, -2)
         return s
 
@@ -126,7 +127,7 @@ class SLSTMCell(nn.Module):
 
 
 class GLSTMCell(nn.Module):
-    def __init__(self, hidden_dim, attn_pooling,dropout):
+    def __init__(self, hidden_dim, attn_pooling, dropout):
         """
 
         :param hidden_dim:

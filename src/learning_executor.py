@@ -29,7 +29,6 @@ sys.path.append(os.environ["COMMON_DIR"])
 from base_process import BaseProcess
 
 
-
 class LearningEvaluator(BaseProcess):
     def __init__(self, _id, model_name):
         super().__init__(_id)
@@ -81,7 +80,7 @@ class LearningEvaluator(BaseProcess):
         hparams = {
             "sdnn": pp.sdnn,
             "slstm": pp.slstm,
-            "cgm":pp.cgm
+            "cgm": pp.cgm
         }
         self.hparams = hparams.get(model_name.lower())(self.model_config, source)
         self._logger.info(f'[DONE]Load hyper params. Name={self.model_name}, Source={source}')
@@ -101,16 +100,20 @@ class LearningEvaluator(BaseProcess):
         self.optimizer.step()
         return loss.item()
 
-    def eval_step(self, xs, ys):
+    def eval_step(self, xs, ys=None):
         xs = [x.to(self.device) for x in xs]
-        ys = ys.to(self.device)
         self.model.eval()
         yhat = self.model(*xs)
-        loss = self.loss_fn(ys, yhat).item()
         prediction = yhat.to(self.device).detach().numpy()
-        # print(prediction)
-        truth = ys.to(self.device).detach().numpy()
+        if ys is not None:
+            ys = ys.to(self.device)
+            loss = self.loss_fn(ys, yhat).item()
+            truth = ys.to(self.device).detach().numpy()
+        else:
+            truth, loss = None, None
+
         return prediction, truth, loss
+
 
     def train(self, train_loader, val_loader, batch_size=64, n_epochs=10, n_features=1):
         """[summary]
@@ -170,7 +173,7 @@ class LearningEvaluator(BaseProcess):
 
                 validation_loss = np.mean(batch_val_losses)
                 self.val_losses.append(validation_loss)
-                
+
                 #  stacked numpy data  to nu
                 predictions = np.concatenate(predictions)
                 truths = np.concatenate(truths)
@@ -211,7 +214,7 @@ class LearningEvaluator(BaseProcess):
             truths = []
             self.test_loader = test_loader
             for x_tests, y_test in test_loader:
-                prediction, truth, val_loss = self.eval_step(x_tests, y_test)
+                prediction, truth, val_loss = self.eval_step(x_tests,y_test)
                 predictions.append(prediction)
                 truths.append(truth)
 
@@ -248,14 +251,29 @@ class LearningEvaluator(BaseProcess):
             save_path = self.mlwriter.log_artifact(path)
             self._logger.info("[DONE] Save obj. Filename={0}".format(filename))
 
-    def prediction(x):
+    def predict(self, data_loader):
+
+        self._logger.info("[Start] Predict. ID={0}".format(self.id))
+        self.prediction = {}
+        self.out_class = eval(self.model_config.get("OUT_CLASS"))
+        self.predictions_out = {}
         with torch.no_grad():
-            x = x.to(self.device)
-            self.model.eval()
-            yhat = self.model(x_test)
-            pred = yhat.to(self.device).detach().numpy()
-            yhat = self.convert_model_value(y_hat)
-        return pred
+            predictions = []
+            self.test_loader = data_loader
+            for x_tests, y_test in data_loader:
+                prediction, _, val_loss = self.eval_step(x_tests)
+                predictions.append(prediction)
+
+        # print(predictions)
+        predictions = np.concatenate(predictions)
+
+        # record
+        self.prediction["eval"] = predictions
+        predictions_out = self.convert_model_value(predictions)
+        self.predictions_out["eval"] = predictions_out
+
+        self._logger.info("[END] Predict. ID={0}".format(self.id))
+        return predictions
 
     # def get_model_save_path(self, _dir=None, _id=None):
     #     _id = self.id if _id is None else _id

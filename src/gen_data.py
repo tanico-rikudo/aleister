@@ -1,4 +1,3 @@
-
 import json
 import pandas as pd
 import numpy as np
@@ -10,6 +9,11 @@ sys.path.append(os.environ['KULOKO_DIR'])
 from mq import mq_handler as mq_handler
 from items import hist_data
 from base_process import BaseProcess
+
+from util import daylib
+from util import utils
+
+dl = daylib.daylib()
 
 VOLATILITY_VAR_DAYS = 30
 VOLATILITY_DAYS = 1
@@ -87,6 +91,7 @@ class DataGen(BaseProcess):
         try:
             command = ""
             realtime_data = self.mq_rpc_client["realtime"].call(command)
+            self._logger.info(f"[DONE] Fetch Feed from server.")
         except Exception as e:
             realtime_data = None
             self._logger.warning(f"[Failure] Cannot fetch Feed from server.:{e}", exc_info=True)
@@ -99,17 +104,21 @@ class DataGen(BaseProcess):
         dfs = {}
         for _key in json_rst.keys():
             try:
-                df = pd.DataFrame(_key)
+                if type(json_rst[_key]) == dict:
+                    df = pd.DataFrame([json_rst[_key]])
+                else:
+                    df = pd.DataFrame(json_rst[_key])
                 df["datetime"] = df["time"].apply(lambda x: dl.strYMDHMSF_to_dt(x))
                 del df["time"]
                 df.set_index("datetime", inplace=True)
                 dfs[_key] = df
+                self._logger.info(f"[DONE] Load data. Key={_key}")
             except Exception as e:
-                self._logger.warning(f"[Failure] Cannot load data. Key={_key}:{e}")
+                self._logger.warning(f"[Failure] Cannot load data. Key={_key}:{e}", exc_info=True)
         return dfs
 
     #### Mains ###
-    def get_Xy(self, mode, input_data_structure, output_data_structure,  **kwargs):
+    def get_Xy(self, mode, input_data_structure, output_data_structure, **kwargs):
         """
         Main Function
         :param mode:
@@ -119,7 +128,7 @@ class DataGen(BaseProcess):
         :return:
         """
         assert mode in ["train", "test", "realtime"], f"Not allow mode:{mode}"
-        self._logger.info(f"{kwargs}")
+        # self._logger.info(f"{kwargs}")
         datas = self.input_data_structures.get(input_data_structure.lower())(**kwargs)
         Xy = self.output_data_structures.get(output_data_structure.lower())(mode=mode, **datas)
         return Xy
@@ -142,12 +151,12 @@ class DataGen(BaseProcess):
         return y
 
     ### Data fetch logics ###
-    def dataset_flatten_simple(self, sym, sd, ed, **kwargs):
-        trades = self.get_hist_data(ch="trade", sym=sym, sd=sd, ed=ed)
-        orderbooks = self.get_hist_data(ch="orderbook", sym=sym, sd=sd, ed=ed)
+    def dataset_flatten_simple(self, sym=None, sd=None, ed=None, trades=None, orderbooks=None):
+        trades = self.get_hist_data(ch="trade", sym=sym, sd=sd, ed=ed) if trades is None else trades
+        orderbooks = self.get_hist_data(ch="orderbook", sym=sym, sd=sd, ed=ed) if orderbooks is None else orderbooks
         return {"trades": trades, "orderbooks": orderbooks}
 
-    def dataset_ts_simple(self, sd, ed, related_syms=None, **kwargs):
+    def dataset_ts_simple(self, sd=None, ed=None, related_syms=None, trades=None, orderbooks=None):
         if related_syms is None:
             related_syms = ["BTC", "ETH"]
         self._logger.info(f"Fetching related syms:{related_syms}")
@@ -156,11 +165,11 @@ class DataGen(BaseProcess):
 
         for _sym in fetch_syms:
             try:
-                datas["trades"][_sym] = self.get_hist_data(ch="trade", sym=_sym, sd=sd, ed=ed)
+                datas["trades"][_sym] = self.get_hist_data(ch="trade", sym=_sym, sd=sd, ed=ed)  if _sym not in trades.keys() else trades[_sym]
             except:
                 pass
             try:
-                datas["orderbooks"][_sym] = self.get_hist_data(ch="orderbook", sym=_sym, sd=sd, ed=ed)
+                datas["orderbooks"][_sym] = self.get_hist_data(ch="orderbook", sym=_sym, sd=sd, ed=ed)  if _sym not in orderbooks.keys() else orderbooks[_sym]
             except:
                 pass
 
@@ -224,7 +233,7 @@ class DataGen(BaseProcess):
             mtrades.loc[np.abs(mtrades['open30Mafter'] - mtrades['open']) <= mtrades.loc[:,
                                                                              "price_chg_allowamce"], "movingBinary"] = 0.0
             mtrades.dropna(subset=["movingBinary"], inplace=True)
-            return_cols = return_cols + ["movingBinary"]
+            return_cols = return_cols
             y = self.onehot_y(mtrades.loc[:, ["movingBinary"]])
         else:
             y = None
