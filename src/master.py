@@ -6,6 +6,9 @@ from sklearn.model_selection import ParameterGrid
 from mlflow_writer import MlflowWriter
 from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME, MLFLOW_USER, MLFLOW_SOURCE_NAME
 from datetime import datetime as dt
+from apscheduler.schedulers.background import BackgroundScheduler
+from mq import mq_handler as mq_handler
+sched = BackgroundScheduler()
 
 os.environ['INIDIR'] = os.environ['ALEISTER_INI']
 INIDIR = os.environ['INIDIR']
@@ -33,6 +36,7 @@ class OperateMaster:
         self.fp = None
         self.le = None
         self._id = None
+        self.mq_settings  = {}
         self.general_config_mode = None
         self.private_api_mode = None
 
@@ -64,6 +68,19 @@ class OperateMaster:
     def init_dataGen(self):
         self.dg = DataGen(self.id, self.sym, self.general_config_mode, self.private_api_mode)
 
+    def init_mq_setting(self):
+        self.mq_settings = mq_handler.load_mq_settings(self.le.general_config)
+
+    def init_realtime_mq(self):
+        if self.mq_settings is not None:
+            self.init_mq_setting()
+
+        mq_handler.init_mqprovider(self.mq_settings["mqserver_host"],
+                                 self.mq_settings["mqname"]['realtimePrediction'],
+                                 self.mq_settings["routing_key"]['realtimePrediction'],
+                                 self.le._logger)
+
+
     def set_mlflow_settings(self, mlflow_client_kwargs, mlflow_tags):
         self.mlflow_tags = mlflow_tags
         self.mlflow_client_kwargs = mlflow_client_kwargs
@@ -72,7 +89,7 @@ class OperateMaster:
         self.mlflow_tags[key] = val
 
     def realtime_preprocessing(self):
-        scalers, note = self.fp.load_numpy_datas(["X_scaler","note"])
+        scalers, note = self.fp.load_numpy_datas(["X_scaler", "note"])
         # Note: Avoid generator
         scaler_list = []
         self.fp._logger.info(f"{scalers}")
@@ -110,11 +127,18 @@ class OperateMaster:
         self.fp._logger.info("[DONE] To numpy and numpy ")
         return realtime_datas, note
 
-    def realtime_predict(self):
+    def realtime_predict_forever(self):
 
-        # todo: mode conider
         uri = self.load_prod_model()
         self.le.load_mlflow_model(uri)
+
+        sched.add_job(self.realtime_predict, 'cron', minute='*')
+        sched.start()
+
+    def realtime_predict(self):
+
+        # Note: Send mw
+        self.init_realtime_mq()
 
         realtime_datas, note = self.realtime_preprocessing()
 
@@ -127,14 +151,12 @@ class OperateMaster:
         self.fp.get_dataset_fn(self.le.hparams["dataset"])
         dataset_params = {_k: self.le.hparams[_k] for _k in self.le.hparams["dataset_params"]}
         _, _, _, test_loader_one = self.fp.get_dataloader(
-            self.le.hparams["dataset"], None, None, None,None,
+            self.le.hparams["dataset"], None, None, None, None,
             realtime_datas["data"]["X"], realtime_datas["data"]["y"], **dataset_params)
 
         prediction = self.le.predict(test_loader_one)
-        # TODO:RPC
 
 
-        # todo: save somwwhre
         return prediction
 
     def preprocessing(self, sym, train_start, train_end, valid_start, valid_end, test_start, test_end):
@@ -295,7 +317,7 @@ class OperateMaster:
         for mv in mvs:
             if mv.current_stage == 'Production':
                 prod_mvs.append(mv)
-        if len(prod_mvs)==0:
+        if len(prod_mvs) == 0:
             raise Exception("No Model on Prod Stage.")
         run_id = prod_mvs[0].run_id  # lastest
         run_info = self.mlwriter.client.get_run(run_id)
@@ -456,7 +478,7 @@ def main(args=None):
             om.deploy_best_model()
         elif arg_dict["execute_mode"] == "rpredict":
             om.init_dataGen()
-            om.realtime_predict(sym)
+            om.realtime_predict_forever(sym)
 
 
 if __name__ == "__main__":

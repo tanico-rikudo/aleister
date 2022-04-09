@@ -48,10 +48,10 @@ class DataGen(BaseProcess):
     def init_mqclient(self, name):
         if self.remote:
             self.mq_rpc_client[name] = \
-                mq_handler.RpcClient(self.mq_settings["mqserver_host"],
-                                     self.mq_settings["mqname"][name],
-                                     self.mq_settings["routing_key"][name],
-                                     self._logger)
+                mq_handler.init_mqclient(self.mq_settings["mqserver_host"],
+                                         self.mq_settings["mqname"][name],
+                                         self.mq_settings["routing_key"][name],
+                                         self._logger)
 
             self._logger.info(f"[DONE] Set MQ client. Name={name}")
         else:
@@ -165,11 +165,14 @@ class DataGen(BaseProcess):
 
         for _sym in fetch_syms:
             try:
-                datas["trades"][_sym] = self.get_hist_data(ch="trade", sym=_sym, sd=sd, ed=ed)  if _sym not in trades.keys() else trades[_sym]
+                datas["trades"][_sym] = self.get_hist_data(ch="trade", sym=_sym, sd=sd,
+                                                           ed=ed) if _sym not in trades.keys() else trades[_sym]
             except:
                 pass
             try:
-                datas["orderbooks"][_sym] = self.get_hist_data(ch="orderbook", sym=_sym, sd=sd, ed=ed)  if _sym not in orderbooks.keys() else orderbooks[_sym]
+                datas["orderbooks"][_sym] = self.get_hist_data(ch="orderbook", sym=_sym, sd=sd,
+                                                               ed=ed) if _sym not in orderbooks.keys() else orderbooks[
+                    _sym]
             except:
                 pass
 
