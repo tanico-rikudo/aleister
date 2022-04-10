@@ -1,3 +1,4 @@
+import json
 import os, sys
 import logging
 import logging.config
@@ -7,7 +8,7 @@ from mlflow_writer import MlflowWriter
 from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME, MLFLOW_USER, MLFLOW_SOURCE_NAME
 from datetime import datetime as dt
 from apscheduler.schedulers.background import BackgroundScheduler
-from mq import mq_handler as mq_handler
+
 sched = BackgroundScheduler()
 
 os.environ['INIDIR'] = os.environ['ALEISTER_INI']
@@ -21,6 +22,8 @@ from model.parameter_parser import parameterParser as pp
 
 sys.path.append(os.environ['COMMON_DIR'])
 from util.config import ConfigManager
+from mq import mq_handler as mq_handler
+from util.daylib import daylib as dl
 
 cm = ConfigManager(os.environ['ALEISTER_INI'])
 logger = cm.load_log_config(os.path.join(LOGDIR, 'logging.log'), log_name="ALEISTER")
@@ -36,7 +39,7 @@ class OperateMaster:
         self.fp = None
         self.le = None
         self._id = None
-        self.mq_settings  = {}
+        self.mq_settings = {}
         self.general_config_mode = None
         self.private_api_mode = None
 
@@ -71,15 +74,14 @@ class OperateMaster:
     def init_mq_setting(self):
         self.mq_settings = mq_handler.load_mq_settings(self.le.general_config)
 
-    def init_realtime_mq(self):
+    def init_realpred_mq(self):
         if self.mq_settings is not None:
             self.init_mq_setting()
 
-        mq_handler.init_mqprovider(self.mq_settings["mqserver_host"],
-                                 self.mq_settings["mqname"]['realtimePrediction'],
-                                 self.mq_settings["routing_key"]['realtimePrediction'],
-                                 self.le._logger)
-
+        self.mq_provider = mq_handler.init_mqprovider(self.mq_settings["mqserver_host"],
+                                                      self.mq_settings["mqname"]['realpred'],
+                                                      self.mq_settings["routing_key"]['realpred'],
+                                                      self.le._logger)
 
     def set_mlflow_settings(self, mlflow_client_kwargs, mlflow_tags):
         self.mlflow_tags = mlflow_tags
@@ -137,10 +139,9 @@ class OperateMaster:
 
     def realtime_predict(self):
 
-        # Note: Send mw
-        self.init_realtime_mq()
 
         realtime_datas, note = self.realtime_preprocessing()
+        now_dt = dl.dt_to_strYMDHM(dl.currentTime())
 
         # train set up
         model_params = {_k: self.le.hparams[_k] for _k in self.le.hparams["structure_params"]}
@@ -156,6 +157,13 @@ class OperateMaster:
 
         prediction = self.le.predict(test_loader_one)
 
+        # Send mq
+        prediction_json = json.dumps(
+            {"datetime": now_dt, "sym": self.sym, "data": prediction.tolist()})
+        if self.mq_provider.channel is not None:
+            self.init_realpred_mq()
+            self.le._logger.info("Realtime Prediction MQ initilized")
+        self.mq_provider.publish_mq(prediction_json)
 
         return prediction
 
