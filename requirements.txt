@@ -18,3 +18,4 @@ tensorboard==2.7.0
 jupyterlab==3.2.8
 psycopg2-binary== 2.9.3
 psycopg2== 2.9.3
+apscheduler==3.8.1
