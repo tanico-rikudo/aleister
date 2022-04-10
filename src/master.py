@@ -24,6 +24,7 @@ sys.path.append(os.environ['COMMON_DIR'])
 from util.config import ConfigManager
 from mq import mq_handler as mq_handler
 from util.daylib import daylib as dl
+from postgres.src.postgres_handler import *
 
 cm = ConfigManager(os.environ['ALEISTER_INI'])
 logger = cm.load_log_config(os.path.join(LOGDIR, 'logging.log'), log_name="ALEISTER")
@@ -87,6 +88,12 @@ class OperateMaster:
         self.mlflow_tags = mlflow_tags
         self.mlflow_client_kwargs = mlflow_client_kwargs
 
+    def init_postgres(self, general_config):
+        postgresHandler = PostgresHandler(general_config)
+        self.postgres_util = PostgresUtil(postgresHandler)
+        self.le._logger.info("[DONE] Init Postgres")
+
+
     def update_mlflow_tags(self, key, val):
         self.mlflow_tags[key] = val
 
@@ -133,12 +140,12 @@ class OperateMaster:
 
         uri = self.load_prod_model()
         self.le.load_mlflow_model(uri)
+        self.init_postgres(self.le.general_config)
 
         sched.add_job(self.realtime_predict, 'cron', minute='*')
         sched.start()
 
     def realtime_predict(self):
-
 
         realtime_datas, note = self.realtime_preprocessing()
         now_dt = dl.dt_to_strYMDHM(dl.currentTime())
@@ -158,12 +165,16 @@ class OperateMaster:
         prediction = self.le.predict(test_loader_one)
 
         # Send mq
-        prediction_json = json.dumps(
-            {"datetime": now_dt, "sym": self.sym, "data": prediction.tolist()})
+        prediciton_dict = {"datetime": now_dt, "sym": self.sym, "data": prediction.tolist()}
+        prediction_json = json.dumps(prediciton_dict )
         if self.mq_provider.channel is not None:
             self.init_realpred_mq()
             self.le._logger.info("Realtime Prediction MQ initilized")
         self.mq_provider.publish_mq(prediction_json)
+
+        # Save DB
+        self.postgres_util.insert_realtime_prediction(prediciton_dict)
+
 
         return prediction
 
