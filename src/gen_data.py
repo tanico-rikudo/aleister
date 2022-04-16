@@ -41,11 +41,11 @@ class DataGen(BaseProcess):
             "ts_v1": self.dataset_ts_simple
         }
 
-        self.init_mqclient("historical")
-        self.init_mqclient("realtime")
+        self.open_mqclient("historical")
+        self.open_mqclient("realtime")
 
     # Data fetch functions
-    def init_mqclient(self, name):
+    def open_mqclient(self, name):
         if self.remote:
             self.mq_rpc_client[name] = \
                 mq_handler.init_mqclient(self.mq_settings["mqserver_host"],
@@ -53,7 +53,7 @@ class DataGen(BaseProcess):
                                          self.mq_settings["routing_key"][name],
                                          self._logger)
 
-            self._logger.info(f"[DONE] Set MQ client. Name={name}")
+            self._logger.info(f"[DONE] Connect MQ client. Name={name}")
         else:
             self._logger.info(f"[Skip] Set MQ client.")
 
@@ -74,7 +74,7 @@ class DataGen(BaseProcess):
                                      exc_info=True)
             finally:
                 self.close_mqclient("historical")
-                self.init_mqclient("historical")
+                self.open_mqclient("historical")
 
         else:
             try:
@@ -90,8 +90,11 @@ class DataGen(BaseProcess):
     def fetch_realdata(self):
         try:
             command = ""
+
             if not self.mq_rpc_client["realtime"].is_connect():
-                self.init_mqclient("realtime")
+                self.open_mqclient("realtime")
+
+            print(self.mq_rpc_client["realtime"].is_connect())
 
             realtime_data = self.mq_rpc_client["realtime"].call(command)
             self._logger.info(f"[DONE] Fetch Feed from server.")
@@ -100,7 +103,7 @@ class DataGen(BaseProcess):
             self._logger.warning(f"[Failure] Cannot fetch Feed from server.:{e}", exc_info=True)
         finally:
             self.close_mqclient("realtime")
-            self.init_mqclient("realtime")
+            self.open_mqclient("realtime")
 
         #  separate datas
         json_rst = json.loads(realtime_data)
