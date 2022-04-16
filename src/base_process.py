@@ -16,7 +16,9 @@ class BaseProcess():
         elif source == "dict":
             self.general_config = cm.load_dict_config(dict_obj)[mode]
         self.save_dir = os.path.join(self.general_config.get("MODEL_SAVE_PATH"), self.id)
+        self.tz = self.general_config.get("TIMEZONE")
         self._logger.info('[DONE]Load General. Source={0}'.format(source))
+
 
     def load_model_config(self, source="ini", path=None, dict_obj=None, model_name=None, omegaconf=None, replace=True):
         if source == "ini":
