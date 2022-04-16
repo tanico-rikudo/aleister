@@ -84,13 +84,15 @@ class OperateMaster:
                                                       self.mq_settings["routing_key"]['realpred'],
                                                       self.le._logger)
 
+        self.le._logger.info("Realtime Prediction MQ initilized.")
+
     def set_mlflow_settings(self, mlflow_client_kwargs, mlflow_tags):
         self.mlflow_tags = mlflow_tags
         self.mlflow_client_kwargs = mlflow_client_kwargs
 
     def init_postgres(self, general_config):
         postgresHandler = PostgresHandler(general_config)
-        self.postgres_util = PostgresUtil(postgresHandler)
+        self.postgres_util = PostgresUtil(postgresHandler, self.le._logger)
         self.le._logger.info("[DONE] Init Postgres")
 
 
@@ -148,7 +150,7 @@ class OperateMaster:
     def realtime_predict(self):
 
         realtime_datas, note = self.realtime_preprocessing()
-        now_dt = dl.dt_to_strYMDHM(dl.currentTime())
+        now_dt = dl.dt_to_strYMDHM(dl.currentTime(offset=self.le.tz))
 
         # train set up
         model_params = {_k: self.le.hparams[_k] for _k in self.le.hparams["structure_params"]}
@@ -167,14 +169,17 @@ class OperateMaster:
         # Send mq
         prediciton_dict = {"datetime": now_dt, "sym": self.sym, "data": prediction.tolist()}
         prediction_json = json.dumps(prediciton_dict )
-        if self.mq_provider.channel is not None:
-            self.init_realpred_mq()
-            self.le._logger.info("Realtime Prediction MQ initilized")
+
+        self.init_realpred_mq()
+        self.mq_provider.connect_mq()
         self.mq_provider.publish_mq(prediction_json)
 
         # Save DB
-        self.postgres_util.insert_realtime_prediction(prediciton_dict)
-
+        if self.postgres_util is not None:
+            try:
+                self.postgres_util.insert_realtime_prediction(prediciton_dict)
+            except Exception as e:
+                self.le._logger.warning(f"[Failure] Save to postgres: {e}")
 
         return prediction
 
