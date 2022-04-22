@@ -90,10 +90,20 @@ class OperateMaster:
         self.mlflow_tags = mlflow_tags
         self.mlflow_client_kwargs = mlflow_client_kwargs
 
-    def init_postgres(self, general_config):
-        postgresHandler = PostgresHandler(general_config)
-        self.postgres_util = PostgresUtil(postgresHandler, self.le._logger)
-        self.le._logger.info("[DONE] Init Postgres")
+
+    def init_postgres(self, postgres_config_mode=None):
+        self.le.load_postgres_ini()
+        if postgres_config_mode is None:
+            self.le._logger.info(
+                f"[DONE] postgres_config_mode is filled with general_config_mode:{self.general_config_mode}"
+            )
+            postgres_config_mode = self.general_config_mode
+        self.postgres = PostgresHandler(self.le.postgres_ini[postgres_config_mode])
+        self.postgres_util = PostgresUtil(self.postgres, self.le._logger)
+        # todo: hide here
+        self.le._logger.info(
+            f"[DONE] Init Postgress. Mode={postgres_config_mode}. Url={self.postgres.host+':'+self.postgres.port}"
+        )
 
 
     def update_mlflow_tags(self, key, val):
@@ -142,7 +152,7 @@ class OperateMaster:
 
         uri = self.load_prod_model()
         self.le.load_mlflow_model(uri)
-        self.init_postgres(self.le.general_config)
+        self.init_postgres()
 
         sched.add_job(self.realtime_predict, 'cron', minute='*')
         sched.start()
@@ -150,7 +160,7 @@ class OperateMaster:
     def realtime_predict(self):
 
         realtime_datas, note = self.realtime_preprocessing()
-        now_dt = dl.dt_to_strYMDHM(dl.currentTime(offset=self.le.tz))
+        now_dt = dl.dt_to_strYMDHM(dl.currentTime(self.le.tz))
 
         # train set up
         model_params = {_k: self.le.hparams[_k] for _k in self.le.hparams["structure_params"]}
@@ -167,7 +177,9 @@ class OperateMaster:
         prediction = self.le.predict(test_loader_one)
 
         # Send mq
-        prediciton_dict = {"datetime": now_dt, "sym": self.sym, "data": prediction.tolist()}
+        prediciton_dict = {"datetime": now_dt, "sym": self.sym, "data": prediction.tolist(),
+                           "time": realtime_datas['times'], "name": self.model_name}
+        # prediciton_dict = {"datetime": now_dt, "sym": self.sym, "data": prediction.tolist()}
         prediction_json = json.dumps(prediciton_dict )
 
         self.init_realpred_mq()

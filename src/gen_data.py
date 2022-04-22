@@ -94,8 +94,6 @@ class DataGen(BaseProcess):
             if not self.mq_rpc_client["realtime"].is_connect():
                 self.open_mqclient("realtime")
 
-            print(self.mq_rpc_client["realtime"].is_connect())
-
             realtime_data = self.mq_rpc_client["realtime"].call(command)
             self._logger.info(f"[DONE] Fetch Feed from server.")
         except Exception as e:

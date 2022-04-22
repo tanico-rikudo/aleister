@@ -35,3 +35,11 @@ class BaseProcess():
             self.model_config = model_config
         else:
             return model_config
+
+    def load_postgres_ini(self):
+        self.postgres_ini = cm.load_ini_config(
+            path=None, config_name="postgres", mode=None
+        )
+
+
+
