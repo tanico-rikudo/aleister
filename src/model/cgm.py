@@ -1,3 +1,6 @@
+from datetime import datetime as dt
+from datetime import timedelta as ddlta
+import scipy.stats
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,49 +12,18 @@ from torch.nn.utils.rnn import pack_padded_sequence as pack
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 
 
-class Attentive_Pooling(nn.Module):
-    def __init__(self, hidden_dim):
-        """
-        Attention mechanism 
-        :param hidden_dim:
-        """
-        super(Attentive_Pooling, self).__init__()
-        self.w_1 = nn.Linear(hidden_dim, hidden_dim)
-        self.w_2 = nn.Linear(hidden_dim, hidden_dim)
-        self.u = nn.Linear(hidden_dim, 1, bias=False)
-
-    def forward(self, memory, query=None, mask=None):
-        '''
-
-        :param query:   (node, hidden)
-        :param memory: (node, hidden)
-        :param mask:
-        :return:
-        '''
-        if query is None:
-            h = torch.tanh(self.w_1(memory))  # node, hidden
-        else:
-            h = torch.tanh(self.w_1(memory) + self.w_2(query))
-        score = torch.squeeze(self.u(h), -1)  # node,
-        if mask is not None:
-            score = score.masked_fill(mask.eq(0), -1e9)
-        alpha = F.softmax(score, -1)  # node,
-        # Note: Why -2 ???
-        s = torch.sum(torch.unsqueeze(alpha, -1) * memory, -2)
-        return s
-
-
 class RGCN(nn.Module):
     def __init__(self, in_features, out_features, relation_num):
         """
-
+        RGCN module
         :param in_features:
         :param out_features:
         :param relation_num:
         """
         super(RGCN, self).__init__()
         self.relation_num = relation_num
-        self.linears = [nn.Linear(in_features, out_features) for i in range(relation_num) ]
+        # Create (# relation ) layers
+        self.linears = [nn.Linear(in_features, out_features) for i in range(relation_num)]
         self.activation = nn.Tanh()
 
     def gcn(self, relation, input, adj):
@@ -62,15 +34,14 @@ class RGCN(nn.Module):
         :param adj:
         :return:
         """
-        support = self.linears[relation](input)
-        output = torch.sparse.mm(adj, support)
+        support = self.linears[relation](input)  # support = liner(input)
+        output = torch.sparse.mm(adj, support)  # adj * support
         return output
 
     def forward(self, input, adjs):
         '''
-
         :param input:   (node, hidden)
-        :param adjs:    (node, node)
+        :param adjs:    (relation, node)
         :return:
         '''
         transform = []
@@ -84,7 +55,7 @@ class RGCN(nn.Module):
 class SLSTMCell(nn.Module):
     def __init__(self, input_size, hidden_dim, relation_num, dropout):
         """
-
+        2nd Laler using
         :param input_size:
         :param hidden_dim:
         :param relation_num:
@@ -116,33 +87,43 @@ class SLSTMCell(nn.Module):
             if use RGCN, there should be multiple gcns, each one for a relation
         :return:
         '''
-        # adjs = [adj]
+        # attention (pre)
+        h = torch.reshape(h, (-1, h.shape[-1]))
         hn = self.rgcn(h, adjs)
-        gates = self.Wh(self.dropout(h)) + self.U(self.dropout(x)) + self.Wn(self.dropout(hn)) + self.Wt(
-            self.dropout(h_t)) + torch.unsqueeze(self.V(g), 0)
+
+        # LSTM gates calculation
+        gates = self.Wh(self.dropout(h)) + \
+                self.U(self.dropout(x)) + \
+                self.Wn(self.dropout(hn)) + \
+                self.Wt(self.dropout(h_t)) + \
+                torch.unsqueeze(self.V(g), 0)
+
         i, f, o, u, t = torch.split(gates, self.hidden_dim, dim=-1)
         new_c = torch.sigmoid(f) * c + torch.sigmoid(i) * torch.tanh(u) + torch.sigmoid(t) * h_t
         new_h = torch.sigmoid(o) * torch.tanh(new_c)
+
+        # Note: Sometimes shape is changed ...... reshape forcefully
+        new_c = torch.reshape(new_c, (1, -1, new_c.shape[-1]))
+        new_h = torch.reshape(new_h, (1, -1, new_h.shape[-1]))
+
         return new_h, new_c
 
 
 class GLSTMCell(nn.Module):
-    def __init__(self, hidden_dim, attn_pooling, dropout):
+    def __init__(self, hidden_dim, dropout):
         """
 
         :param hidden_dim:
-        :param attn_pooling:
         """
         super(GLSTMCell, self).__init__()
         self.hidden_dim = hidden_dim
         self.dropout = torch.nn.Dropout(dropout)
-        self.W = nn.Linear(hidden_dim, hidden_dim * 2, bias=False)
+        self.W = nn.Linear(hidden_dim, hidden_dim * 5, bias=False)
         self.w = nn.Linear(hidden_dim, hidden_dim, bias=False)
-        self.U = nn.Linear(hidden_dim, hidden_dim * 2)
+        self.U = nn.Linear(hidden_dim, hidden_dim * 5)
         self.u = nn.Linear(hidden_dim, hidden_dim)
-        self.attn_pooling = attn_pooling
 
-    def forward(self, g, c_g, h, c):
+    def forward(self, g, c_g, t_g, t_c, h, c):
         """
 
         :param g:
@@ -151,14 +132,28 @@ class GLSTMCell(nn.Module):
         :param c:
         :return:
         """
-        ''' assume dim=1 is word'''
-        # this can use attentive pooling
-        # h_avg = torch.mean(h, 1)
-        h_avg = self.attn_pooling(h)
-        f, o = torch.split(torch.sigmoid(self.W(g) + self.U(h_avg)), self.hidden_dim, dim=-1)
+
+        # attention (pre)
+        h_avg = torch.mean(h, 1)  # Note: Originaal has attentio.  No attention pooling because of no words
+
+        # LSTM gates
+        gates = torch.sigmoid(self.W(g) + self.U(h_avg))
+
+        i, f, o, u, _ = torch.split(gates, self.hidden_dim, dim=-1)
         f_w = torch.sigmoid(torch.unsqueeze(self.w(g), -2) + self.u(h))
         f_w = F.softmax(f_w, -2)
         new_c = f * c_g + torch.sum(c * f_w, -2)
+        new_g = o * torch.tanh(new_c)
+
+        return new_g, new_c
+
+    def init_forward(self, t_g, t_c, h):
+        # h_avg = torch.mean(h, 1)
+        h_avg = h
+        # the gates are calculated according to h
+        gates = self.dropout(self.W(t_g) + self.U(h_avg))
+        i, f, o, u, _ = torch.split(gates, self.hidden_dim, dim=-1)
+        new_c = torch.sigmoid(f) * t_c + torch.sigmoid(i) * torch.tanh(u)
         new_g = o * torch.tanh(new_c)
         return new_g, new_c
 
@@ -180,95 +175,135 @@ class CGM(nn.Module):
                                         nn.Linear(hidden_dim * 2, hidden_dim * 2), nn.ReLU(),
                                         nn.Linear(hidden_dim * 2, hidden_dim))
 
-        self.attn_pooling = Attentive_Pooling(hidden_dim)
-        self.s_cell = SLSTMCell(hidden_dim, hidden_dim, relation_num, seq_dropout_rate)
-        self.g_cell = GLSTMCell(hidden_dim, self.attn_pooling, gbl_dropout_rate)
+        #
+        self.s_cell = SLSTMCell(
+            input_size=hidden_dim,
+            hidden_dim=hidden_dim,
+            relation_num=relation_num,
+            dropout=seq_dropout_rate)
+
+        self.g_cell = GLSTMCell(hidden_dim, gbl_dropout_rate)
         self.w_out = nn.Linear(hidden_dim, output_dim)
         self.num_layers = num_layers
         self.dropout = torch.nn.Dropout(last_dropout_rate)
 
-    def encode(self, span_nodes, node_feature, adj):
+    def encode(self, price_data, volume_data):
         """
 
-        :param span_nodes: (time, node)
-        :param node_feature:   (time, node, feature_size)
+        :param price_data:
+        :param volume_data:
         :param adj:
         :return:
         """
-        # TODO: node_feature order and contents
-        node_emb = self.node_emb(span_nodes)  # idx of node
-        x_price = self.feature_weight_price(node_feature[:, :, :6])
-        x_volume = self.feature_weight_volume(node_feature[:, :, 6:])
 
-        ### price graph ###
-        last_h_time_price = torch.squeeze(x_price[0], 0)  # node feature 
-        last_c_time_price = torch.squeeze(x_price[0], 0)  # node feature 
-        
-        last_g_time_price = self.attn_pooling(last_h_time_price, node_emb)
-        last_c_g_time_price = self.attn_pooling(last_c_time_price, node_emb)
-        # h_states = []
-        
-        time = node_feature.size(0)
-        for t in range(time):
+        x_price = self.feature_weight_price(price_data[:, :, :self.price_input_size])
+        x_volume = self.feature_weight_volume(volume_data[:, :, :self.vol_input_size])
+        time_len = price_data.shape[0]
+
+        price_graph, price_graph_np = self.build_graph(x_price.detach().numpy(), 5)
+        volume_graph, volume_graph_np = self.build_graph(x_volume.detach().numpy(), 5)
+
+        volume_graph_np = torch.from_numpy(np.array(volume_graph_np)).float()
+        price_graph_np = torch.from_numpy(np.array(price_graph_np)).float()
+
+        last_h_time_price = torch.squeeze(x_price[0], 0)  # node feature
+        last_c_time_price = torch.squeeze(x_price[0], 0)  # node feature
+
+        last_h_time_volume = torch.squeeze(x_volume[0], 0)  # node feature
+        last_c_time_volume = torch.squeeze(x_volume[0], 0)  # node feature
+
+        last_g_time_price = last_h_time_price
+        last_c_g_time_price = last_c_time_price
+
+        last_g_time_volume = last_h_time_volume
+        last_c_g_time_volume = last_c_time_volume
+
+        for t in range(time_len):
             # init
             last_h_layer_price = last_h_time_price
             last_c_layer_price = last_c_time_price
-            # information integration 
-            last_g_layer_price, last_c_g_layer_price = self.g_cell.init_forward(last_g_time_price, last_c_g_time_price,
-                                                                                last_h_layer_price, last_c_layer_price,
-                                                                                node_emb)
+            # information integration
+            # Each input: Comps * hidden size
+            last_g_layer_price, last_c_g_layer_price = self.g_cell.init_forward(last_g_time_price,
+                                                                                last_c_g_time_price,
+                                                                                last_h_layer_price)
             for l in range(self.num_layers):
                 # x, h, c, g, h_t, adj
-                last_h_layer_price, last_c_layer_price = self.s_cell(torch.squeeze(x_price[t], 0), last_h_layer_price,
-                                                                     last_c_layer_price, last_g_layer_price,
-                                                                     last_h_time_price, adj)
+                last_h_layer_price, last_c_layer_price = self.s_cell(
+                    torch.squeeze(x_price[t], 0),
+                    last_h_layer_price,
+                    last_c_layer_price,
+                    last_g_layer_price,
+                    last_h_time_price,
+                    price_graph_np)
                 # g, c_g, t_g, t_c, h, c
-                last_g_layer_price, last_c_g_layer_price = self.g_cell(last_g_layer_price, last_c_g_layer_price,
-                                                                       last_g_time_price, last_c_g_time_price,
-                                                                       last_h_layer_price, last_c_layer_price, node_emb)
+                last_g_layer_price, last_c_g_layer_price = self.g_cell(
+                    last_g_layer_price,
+                    last_c_g_layer_price,
+                    last_g_time_price,
+                    last_c_g_time_price,
+                    last_h_layer_price,
+                    last_c_layer_price)
+
             last_h_time_price, last_c_time_price = last_h_layer_price, last_c_layer_price
             last_g_time_price, last_c_g_time_price = last_g_layer_price, last_c_g_layer_price
 
-        ### volume graph ###
-        last_h_time_volume = torch.squeeze(x_volume[0], 0)  # node feature 
-        last_c_time_volume = torch.squeeze(x_volume[0], 0)  # node feature 
-        last_g_time_volume = self.attn_pooling(last_h_time_volume, node_emb)
-        last_c_g_time_volume = self.attn_pooling(last_c_time_volume, node_emb)
-        # h_states = []
-        
-        time = node_feature.size(0)
-        for t in range(time):
+        for t in range(time_len):
             # init
             last_h_layer_volume = last_h_time_volume
             last_c_layer_volume = last_c_time_volume
-            # information integration 
-            last_g_layer_volume, last_c_g_layer_volume = self.g_cell.init_forward(last_g_time_volume,
-                                                                                  last_c_g_time_volume,
-                                                                                  last_h_layer_volume,
-                                                                                  last_c_layer_volume, node_emb)
+            # information integration
+            last_g_layer_volume, last_c_g_layer_volume = self.g_cell.init_forward(
+                last_g_time_volume,
+                last_c_g_time_volume,
+                last_h_layer_volume,
+            )
             for l in range(self.num_layers):
                 # x, h, c, g, h_t, adj
                 last_h_layer_volume, last_c_layer_volume = self.s_cell(torch.squeeze(x_volume[t], 0),
-                                                                       last_h_layer_volume, last_c_layer_volume,
-                                                                       last_g_layer_volume, last_h_time_volume, adj)
+                                                                       last_h_layer_volume,
+                                                                       last_c_layer_volume,
+                                                                       last_g_layer_volume,
+                                                                       last_h_time_volume,
+                                                                       volume_graph_np)
                 # g, c_g, t_g, t_c, h, c
-                last_g_layer_volume, last_c_g_layer_volume = self.g_cell(last_g_layer_volume, last_c_g_layer_volume,
-                                                                         last_g_time_volume, last_c_g_time_volume,
-                                                                         last_h_layer_volume, last_c_layer_volume,
-                                                                         node_emb)
+                last_g_layer_volume, last_c_g_layer_volume = self.g_cell(last_g_layer_volume,
+                                                                         last_c_g_layer_volume,
+                                                                         last_g_time_volume,
+                                                                         last_c_g_time_volume,
+                                                                         last_h_layer_volume,
+                                                                         last_c_layer_volume,
+                                                                         )
+
             last_h_time_volume, last_c_time_volume = last_h_layer_volume, last_c_layer_volume
             last_g_time_volume, last_c_g_time_volume = last_g_layer_volume, last_c_g_layer_volume
 
         ### CCA ###
         cca_price, cca_volume = self.cca_price(last_h_time_price), self.cca_volume(last_h_time_volume)
-        
-        
         last_h_layer, last_c_layer, last_g_layer, last_c_g_layer = last_h_layer_volume, last_c_layer_volume, last_g_layer_volume, last_c_g_layer_volume
 
         return last_h_layer, cca_price, cca_volume
 
-    def forward(self, span_nodes,  node_feature, adj):
+    def build_graph(data, n_index, n_feature):
+        graph = {}
+        np_graph = []
+        for _feature_key in range(n_feature):
+            graph[_feature_key] = {}
+            layer_1 = []
+            for _idx_key_1 in range(len(n_index)):
+                graph[_feature_key][_idx_key_1] = {}
+                layer_2 = []
+                for _idx_key_2 in range(len(n_index)):
+                    ir, p = scipy.stats.pearsonr(data[_idx_key_1, :, _feature_key], data[_idx_key_2, :, _feature_key])
+                    graph[_feature_key][_idx_key_1][_idx_key_2] = ir
+                    layer_2.append(ir)
+                layer_1.append(layer_2)
+            np_graph.append(layer_1)
+        return graph, np_graph
+
+    def forward(self, price_data, volume_data):
         '''
+        :param span_nodes:
         :param batch:
             nodes: (time, graph_node)
             node_feature: (time, node, seq)
@@ -276,6 +311,6 @@ class CGM(nn.Module):
         :param use_cuda:
         :return:    (node, label)
         '''
-        last_h, cca_price, cca_volume = self.encode(span_nodes, node_feature, adj)
+        last_h, cca_price, cca_volume = self.encode(price_data, volume_data)
         # the index 0 here is the first time step, which is because that this is the initialization
         return self.w_out(self.dropout(last_h)), cca_price, cca_volume
