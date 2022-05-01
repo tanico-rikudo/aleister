@@ -132,8 +132,9 @@ class DataGen(BaseProcess):
         :return:
         """
         assert mode in ["train", "test", "realtime"], f"Not allow mode:{mode}"
-        # self._logger.info(f"{kwargs}")
+        self._logger.info(f"{kwargs}")
         datas = self.input_data_structures.get(input_data_structure.lower())(**kwargs)
+        self._logger.info(datas)
         Xy = self.output_data_structures.get(output_data_structure.lower())(mode=mode, **datas)
         return Xy
 
@@ -160,25 +161,37 @@ class DataGen(BaseProcess):
         orderbooks = self.get_hist_data(ch="orderbook", sym=sym, sd=sd, ed=ed) if orderbooks is None else orderbooks
         return {"trades": trades, "orderbooks": orderbooks}
 
-    def dataset_ts_simple(self, sd=None, ed=None, related_syms=None, trades=None, orderbooks=None):
+    def dataset_ts_simple(self, sd=None, ed=None, related_syms=None, trades=None, orderbooks=None ,**kwargs):
         if related_syms is None:
             related_syms = ["BTC", "ETH"]
         self._logger.info(f"Fetching related syms:{related_syms}")
         fetch_syms = list(set(related_syms))
         datas = {_type: {_sym: None for _sym in fetch_syms} for _type in ["trades", "orderbooks"]}
+        self._logger.info(trades)
 
         for _sym in fetch_syms:
             try:
-                datas["trades"][_sym] = self.get_hist_data(ch="trade", sym=_sym, sd=sd,
-                                                           ed=ed) if _sym not in trades.keys() else trades[_sym]
-            except:
-                pass
+                if trades is  None:
+                    datas["trades"][_sym] = self.get_hist_data( ch="trade", sym=_sym, sd=sd,ed=ed)
+                else:
+                    datas["trades"][_sym] = self.get_hist_data(
+                        ch="trade", sym=_sym, sd=sd,ed=ed) if _sym not in trades.keys() else trades[_sym]
+                self._logger.info(f"[DONE] Fetching trade. sym:{_sym}, shape={datas['trades'][_sym].shape}")
+
+            except Exception as e:
+                self._logger.warning(f"[Failure] Fetching related sym:{_sym}:{e}")
             try:
-                datas["orderbooks"][_sym] = self.get_hist_data(ch="orderbook", sym=_sym, sd=sd,
-                                                               ed=ed) if _sym not in orderbooks.keys() else orderbooks[
-                    _sym]
-            except:
-                pass
+                if trades is  None:
+                    datas["orderbooks"][_sym] = self.get_hist_data(ch="orderbook", sym=_sym, sd=sd,ed=ed)
+                else:
+                    datas["orderbooks"][_sym] = self.get_hist_data(
+                        ch="orderbook", sym=_sym, sd=sd,ed=ed)\
+                        if _sym not in orderbooks.keys() else orderbooks[_sym]
+                self._logger.info(f"[DONE] Fetching Orderbook. sym:{_sym}, shape={datas['orderbooks'][_sym].shape}")
+
+            except Exception as e:
+                self._logger.warning(f"[Failure] Fetching related sym:{_sym}:{e}")
+
 
         return datas
 

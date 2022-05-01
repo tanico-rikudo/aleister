@@ -13,8 +13,7 @@ from sklearn.metrics import accuracy_score
 from mlflow_writer import *
 
 from model.parameter_parser import parameterParser as pp
-from model import dnn, lstm, cgm
-
+from model import dnn, lstm, cgm, dcca
 from datetime import datetime as dt
 import numpy as np
 import pandas as pd
@@ -42,6 +41,10 @@ class LearningEvaluator(BaseProcess):
 
         self.mlwriter = None
 
+        # init
+        self.loss_fn = {}
+        self.loss_fn_name = []
+
     def build_mlflow(self, mlwriter, mlflow_tags):
         self.mlwriter = mlwriter
         self.mlflow_tags = mlflow_tags
@@ -52,10 +55,13 @@ class LearningEvaluator(BaseProcess):
 
     def get_loss_fn(self, fn_name, fn_params):
         fns = {
-            "bcelogitloss": nn.BCEWithLogitsLoss
+            "bcelogitloss": nn.BCEWithLogitsLoss,
+            "dcca": dcca.cca_loss
+
         }
-        self.loss_fn = fns.get(fn_name.lower())(**fn_params)
-        self.loss_fn_name = fn_name
+        self.loss_fn[fn_name.lower()] = fns.get(fn_name.lower())(**fn_params)
+        self.loss_fn_name.append(fn_name)
+        # todo muli loss function
         self._logger.info('[DONE] Get loss fn. Function={0}'.format(self.loss_fn))
 
     def get_optimizer(self, optimizer_name, optim_params):
@@ -94,8 +100,21 @@ class LearningEvaluator(BaseProcess):
         xs = [x.to(self.device) for x in xs]
         ys = ys.to(self.device)
         self.model.train()
-        yhat = self.model(*xs)
-        loss = self.loss_fn(ys, yhat)
+        ret = self.model(*xs)
+
+        # analyze ret
+        if type(ret) == list:
+            yhat, rets = ret[0], ret[1:]
+        else:
+            yhat, rets = ret, None
+
+        # Define  loss
+        loss = self.loss_fn[self.loss_fn_name[0]](ys, yhat)
+        if self.model_name == 'cgm':
+            cca_volume, cca_price = rets[0], rets[1]
+            cca_loss = self.loss_fn[self.loss_fn_name[1]](cca_volume, cca_price).sum()
+            loss += cca_loss
+
         loss.backward()
         self.optimizer.step()
         return loss.item()
@@ -103,17 +122,27 @@ class LearningEvaluator(BaseProcess):
     def eval_step(self, xs, ys=None):
         xs = [x.to(self.device) for x in xs]
         self.model.eval()
-        yhat = self.model(*xs)
+        ret = self.model(*xs)
+
+        # analyze ret
+        if type(ret) == list:
+            yhat, rets = ret[0], ret[1:]
+        else:
+            yhat, rets = ret, None
+
         prediction = yhat.to(self.device).detach().numpy()
         if ys is not None:
             ys = ys.to(self.device)
-            loss = self.loss_fn(ys, yhat).item()
+            loss = self.loss_fn[self.loss_fn_name[0]](ys, yhat).item()
+            if self.model_name == 'cgm':
+                cca_volume, cca_price = rets[0], rets[1]
+                cca_loss = self.loss_fn[self.loss_fn_name[1]](cca_volume, cca_price).sum()
+                loss += cca_loss
             truth = ys.to(self.device).detach().numpy()
         else:
             truth, loss = None, None
 
         return prediction, truth, loss
-
 
     def train(self, train_loader, val_loader, batch_size=64, n_epochs=10, n_features=1):
         """[summary]
@@ -214,7 +243,7 @@ class LearningEvaluator(BaseProcess):
             truths = []
             self.test_loader = test_loader
             for x_tests, y_test in test_loader:
-                prediction, truth, val_loss = self.eval_step(x_tests,y_test)
+                prediction, truth, val_loss = self.eval_step(x_tests, y_test)
                 predictions.append(prediction)
                 truths.append(truth)
 

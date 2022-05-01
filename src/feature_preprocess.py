@@ -220,14 +220,12 @@ class featurePreprocess(BaseProcess):
         input_dim = X.shape[1]
 
         # Scaler
-        self._logger.info(f"dededed:{scalers}")
         scaler = scalers[0] if scalers is not None else None
         scaled_X, scaler = self.scalingX(X.reshape(-1, X.shape[1]), scaler=scaler, scaler_name='minmax')
 
-        return {'data': {'X': X, 'y': y}, 'scaler': [scaler], 'input_dim': input_dim, 'times':dt_index}
+        return {'data': {'X': scaled_X, 'y': y}, 'scaler': [scaler], 'input_dim': input_dim, 'times':dt_index}
 
     ### ###
-    @staticmethod
     def stack_3d(self, data_tree, scalers=None):
         """ Make numpy obj
         Scaler: minmax
@@ -240,26 +238,42 @@ class featurePreprocess(BaseProcess):
         """
         # Each X/y have only 1 kind. 
         # symbol * datetime * feature
-        X = np.array([data_tree[_sym]['X'][0].values for _sym in data_tree.keys()])
-        dt_index = list(data_tree[data_tree.keys()[0]]['X'][0].keys())
-        dt_index = [ dl.dt_to_strYMDHMSF(x) for x in dt_index]
+        syms = list(data_tree.keys())
+        new_scalers = []
+        scaled_Xs = []
+        ys = []
+        input_dims = []
+        dt_indexs = []
 
-        for _sym in data_tree.keys():
-            if data_tree[_sym]['y'][0] is not None:
-                y = np.array([data_tree[_sym]['y'][0].values])
-            else:
-                y = [None]
+        # representive
+        dt_index = list(data_tree[syms[0]]['X'][0].index)
+        dt_index = [dl.dt_to_strYMDHMSF(x) for x in dt_index]
 
-        input_dim = X.shape[2]
+        for _sym  in syms:
+            X = data_tree[_sym]['X'][0].values
+            y = data_tree[_sym]['y'][0].values if data_tree[_sym]['y'][0] is not None else [None]
+
+
+            # Scaler
+            scaler = scalers[0] if scalers is not None else None
+            scaled_X, scaler = self.scalingX(X.reshape(-1, X.shape[1]), scaler=scaler, scaler_name='minmax')
+
+            # add to list
+            new_scalers.append(scaler)
+            scaled_Xs.append(scaled_X)
+            ys.append(y)
+            input_dims.append(X.shape[1])
+
+        scaled_Xs = np.stack(scaled_Xs)
+        ys = np.stack(ys)
+        scalers = new_scalers if scalers is None else scalers
 
         # transpose to... datetime * symbol * feature
-        X = X.transpose(1, 0, 2)
-        y = y.transpose(1, 0, 2)
+        scaled_Xs = scaled_Xs.transpose(1, 0, 2)
+        ys = ys.transpose(1, 0, 2)
 
         # Scaler
-        scaler = scalers[0] if scalers is not None else None
-        scaled_X, scaler = self.scalingX(X.reshape(-1, X.shape[2]), scaler=scaler, scaler_name='minmax')
-        return {'data': {'X': X, 'y': y}, 'scaler': [scaler], 'input_dim': input_dim, 'time':dt_index}
+        return {'data': {'X': scaled_Xs, 'y': ys}, 'scaler': scalers, 'input_dim': input_dims, 'time':dt_index}
 
     ### Torch dataloader ###
     def get_dataloader(self, dataset_fn, X_trains=None, y_train=None, X_vals=None, y_val=None, X_tests=None,
