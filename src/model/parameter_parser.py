@@ -58,7 +58,7 @@ class parameterParser:
 
         else:
             raise Exception("Fail to recognize config source={0}".format(source))
-        return hparams
+
         return hparams
     
 
