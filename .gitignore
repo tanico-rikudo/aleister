@@ -141,3 +141,8 @@ db/
 #docker
 .python_history
 .bash_history
+
+#jupyter 
+.jupyter
+.local
+.ipython

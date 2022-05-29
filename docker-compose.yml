@@ -1,5 +1,5 @@
 version: "3"
-services:  
+services:
   aleister_db:
     container_name: aleister_db
     command: --default-authentication-plugin=mysql_native_password
@@ -12,13 +12,16 @@ services:
     image: mysql:8.0
     platform: linux/x86_64
     ports:
-      - "12306:12306"
+      - 12306:12306
     restart: always
     depends_on:
       - aleister_mlflow
     volumes:
-      - ./db/data:/var/lib/mysql
+      - ${HOST_DATA_BASE_DIR}/aleister_db:/var/lib/mysql
       - ./etc/my.cnf:/etc/mysql/conf.d/my.cnf
+    networks:
+      shared-nw:
+        ipv4_address: 172.30.0.33
 
   aleister_python:
     container_name: aleister_python
@@ -29,12 +32,20 @@ services:
       - ${HOST_BASE_DIR}/kuloko:/root/src/kuloko
       - ${HOST_BASE_DIR}/aleister:/root/src/aleister
       - ${HOST_BASE_DIR}/geco_commons:/root/src/geco_commons
+      - ${HOST_DATA_BASE_DIR}:/data
     working_dir: /root/src
     environment:
       HOME: ${ALEISTER_DIR}
-    env_file:
-      .env
+    ports:
+      - 9899:9898
+    expose:
+      - 9898
+    env_file: .env
+    command: jupyter lab --allow-root --ip=0.0.0.0 --port=9898 --no-browser --NotebookApp.token=''
     tty: true
+    networks:
+      shared-nw:
+        ipv4_address: 172.30.0.34
 
   aleister_mlflow:
     container_name: aleister_mlflow
@@ -42,18 +53,25 @@ services:
       context: .
       dockerfile: mlflow_dockerfile
     volumes:
-      - ${HOST_BASE_DIR}/geco_commons/mlflow/mlruns:/root/mlflow
+      - ${HOST_DATA_BASE_DIR}/mlflow:/data/mlflow
     working_dir: /root/src
     depends_on:
       - aleister_python
     ports:
-      - "5000:5000"
+      - 5000:5000
     environment:
       HOME: ${BASE_DIR}
-    env_file:
-      .env
-    command: mlflow server --backend-store-uri ${BASE_DIR}/mlflow/mlruns --default-artifact-root ${BASE_DIR}/mlflow/mlruns --host 0.0.0.0 --port 5000
+    env_file: .env
+    command: mlflow server --backend-store-uri sqlite:////data/mlflow/mlruns.db --default-artifact-root /data/mlflow/mlruns --host 0.0.0.0 --port 5000
     restart: always
-    # networks:
-    #   - default
-    #   - shared-network
+    networks:
+      shared-nw:
+        ipv4_address: 172.30.0.35
+
+networks:
+  default:
+    external:
+      name: bridge
+  # Connection  among conntianers
+  shared-nw:
+    external: true

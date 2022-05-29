@@ -15,3 +15,7 @@ requests==2.26.0
 websocket_client==1.2.1
 pika==1.2.0
 tensorboard==2.7.0
+jupyterlab==3.2.8
+psycopg2-binary== 2.9.3
+psycopg2== 2.9.3
+apscheduler==3.8.1
